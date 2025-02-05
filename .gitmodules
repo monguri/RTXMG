@@ -1,0 +1,9 @@
+[submodule "extern/donut"]
+	path = extern/donut
+	url = https://github.com/NVIDIA-RTX/Donut.git
+[submodule "assets"]
+	path = assets
+	url = https://github.com/NVIDIA-RTX/RTXMG-Sample-Assets.git
+[submodule "extern/osd_lite"]
+	path = extern/osd_lite
+	url = https://github.com/NVIDIA-RTX/OSD-Lite.git

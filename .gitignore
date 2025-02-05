@@ -1,0 +1,6 @@
+*.*~
+scenes
+bin/
+_build/
+build/
+.vscode/

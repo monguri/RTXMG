@@ -1,0 +1,6 @@
+<Project>
+    <PropertyGroup>
+        <RunCodeAnalysis>true</RunCodeAnalysis>
+        <CodeAnalysisRuleset>dxcb_static_analysis.ruleset</CodeAnalysisRuleset>
+    </PropertyGroup>
+</Project>

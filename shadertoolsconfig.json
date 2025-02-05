@@ -1,0 +1,5 @@
+{
+	"hlsl.additionalIncludeDirectories": [
+		"c:\\work\\dxclusterbench\\src"
+	]
+}
