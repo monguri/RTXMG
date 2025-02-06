@@ -136,12 +136,7 @@ BibTex:
 
 ## Known Issues
 
-1. Currently the acceleration structure build requires a single GPU readback to
-   precisely size the buffers populated with cluster data.  This could be avoided 
-   either by maintaining a single large buffer, detecting overflow, and growing that 
-   buffer (at the expense of a single incorrect frame and potentially unused buffer
-   space).
-2. The RTXMG SDK does not currently support unstructured clusters or rasterization.
+1. The RTXMG SDK does not currently support unstructured clusters or rasterization.
 
 ## License
 
