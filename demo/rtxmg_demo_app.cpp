@@ -429,6 +429,9 @@ void RTXMGDemoApp::ResetCamera()
 bool RTXMGDemoApp::LoadScene(std::shared_ptr<vfs::IFileSystem> fs,
     const std::filesystem::path& sceneFileName)
 {
+    stats::evaluatorSamplers = {};
+    stats::memUsageSamplers = {};
+
     auto shaderFactory = GetRenderer().GetShaderFactory();
     RTXMGScene* scene =
         new RTXMGScene(GetDevice(), GetMediaPath(),
