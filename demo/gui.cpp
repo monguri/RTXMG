@@ -71,8 +71,6 @@ constexpr float kItemWidth = 200.0f;
 UserInterface::UserInterface(RTXMGDemoApp& app)
     : ImGui_Renderer(app.GetDeviceManager()), m_app(app)
 {
-    ImGui::GetIO().IniFilename = nullptr;
-
     char const* nvidiaRgGlyphData = GetNVSansFontRgCompressedBase85TTF();
     m_nvidiaRgFont =
         AddFontFromMemoryCompressedBase85TTF(nvidiaRgGlyphData, 15.f, nullptr);
@@ -100,7 +98,115 @@ UserInterface::UserInterface(RTXMGDemoApp& app)
 
     m_app.SetGui(this);
 
+    SetupIniHandler();
+
     SetupAudioEngine();
+}
+
+void UserInterface::SetupIniHandler()
+{
+    ImGuiIO& io = ImGui::GetIO();
+
+    if (const fs::path& binaryPath = app::GetDirectoryWithExecutable(); !binaryPath.empty())
+    {
+        UIData& ui = m_app.GetUIData();
+        ui.iniFilepath = (binaryPath / "imgui.ini").generic_string();
+        io.IniFilename = ui.iniFilepath.c_str();
+    }
+
+    io.IniSavingRate = 60.f;  // save every minute only or on quit
+
+    static struct Settings
+    {
+        bool audio_muted = false;
+
+        bool json_assets_filter = false;
+        bool obj_assets_filter = false;
+
+        bool display_stats = false;
+
+        bool wantApply = false;
+    } settings;
+
+    ImGuiSettingsHandler ini_handler;
+    ini_handler.TypeName = "RTXMG";
+    ini_handler.TypeHash = ImHashStr(ini_handler.TypeName);
+    ini_handler.UserData = this;
+
+    ini_handler.ReadOpenFn = [](ImGuiContext*, ImGuiSettingsHandler*, const char* name) -> void* {
+        settings.wantApply = true;
+        return &settings;
+    };
+
+
+    ini_handler.ApplyAllFn = [](ImGuiContext* ctx, ImGuiSettingsHandler* handler) {
+        
+        if (settings.wantApply)
+        {
+            auto* gui = reinterpret_cast<UserInterface*>(handler->UserData);
+            auto* app = &gui->m_app;
+
+            gui->GetProfilerGUI().displayGraphWindow = settings.display_stats;
+
+            gui->MuteAudio(settings.audio_muted);
+
+            UIData& ui = app->GetUIData();
+            ui.includeJsonAssets = settings.json_assets_filter;
+            ui.includeObjAssets = settings.obj_assets_filter;
+
+            const fs::path& mediaPath = app->GetMediaPath();
+            if (!mediaPath.empty())
+            {
+                assert(ui.mediaAssets.empty());
+                auto folder_filters = ui.folderFilters();
+                auto format_filters = ui.formatFilters();
+                ui.mediaAssets = FindMediaAssets(mediaPath, folder_filters.data(), format_filters.data());
+            }
+
+            settings.wantApply = false;
+        }
+    };
+
+
+    ini_handler.ReadLineFn = [](ImGuiContext*, ImGuiSettingsHandler* handler, void* entry, const char* line) {
+
+        int audio_muted = 0;
+        if (std::sscanf(line, "AudioMuted=%d", &audio_muted) == 1)
+            settings.audio_muted = audio_muted;
+
+        uint32_t json = 0, obj = 0;
+        if (std::sscanf(line, "FormatFilters={ json=%d, obj=%d }", &json, &obj) == 2)
+        {
+            settings.json_assets_filter = (bool)json;
+            settings.obj_assets_filter = (bool)obj;
+        }
+
+        int display_stats = false;
+        if (std::sscanf(line, "DisplayStatistics=%d", &display_stats) == 1)
+            settings.display_stats = display_stats != 0;
+    };
+
+    ini_handler.WriteAllFn = [](ImGuiContext* ctx, ImGuiSettingsHandler* handler, ImGuiTextBuffer* buf) {
+
+        auto* gui = reinterpret_cast<UserInterface*>(handler->UserData);
+        auto* app = &gui->m_app;
+        
+        UIData& ui = app->GetUIData();
+        
+        settings.audio_muted = ui.audioMuted;
+        settings.json_assets_filter = ui.includeJsonAssets;
+        settings.obj_assets_filter = ui.includeObjAssets;
+        settings.display_stats = gui->GetProfilerGUI().displayGraphWindow;
+
+        buf->reserve(buf->size() + 2);  // ballpark reserve
+        buf->appendf("[%s][%s]\n", handler->TypeName, "Settings");
+        buf->appendf("AudioMuted=%d\n", settings.audio_muted);
+        buf->appendf("FormatFilters={ json=%d, obj=%d }\n", settings.json_assets_filter, settings.obj_assets_filter);
+        buf->appendf("DisplayStatistics=%d\n", settings.display_stats);
+        buf->append("\n");
+    };
+
+    ImGui::AddSettingsHandler(&ini_handler);
 }
 
 void UserInterface::BackBufferResized(const uint32_t width,
@@ -889,9 +995,10 @@ void UserInterface::BuildUIMain(int2 windowSize)
 
     m_profiler.profilingWindow = {
         .pos = ImVec2(float(width) - 10.f, 10.f),
+        .cond = ImGuiCond_FirstUseEver,
         .pivot = ImVec2(1.f, 0.f),
         .size = ImVec2(800.f, 450.f),
-        .resetLayout = m_resetLayout
+        .resetLayout = m_resetLayout,
     };
 
     m_profiler.BuildUI<stats::FrameSamplers, stats::ClusterAccelSamplers, stats::EvaluatorSamplers, stats::MemUsageSamplers>(m_iconicFont, m_implot,

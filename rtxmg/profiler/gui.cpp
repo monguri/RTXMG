@@ -89,12 +89,12 @@ void ProfilerGUI::BuildControllerUI( ImFont* iconicFont, ImPlotContext *plotCont
 
     ImGui::PushFont(iconicFont);
 
-    bool buttonState = m_displayGraphWindow;
+    bool buttonState = displayGraphWindow;
     if (buttonState)
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1.f, 0.f, 0.f, 1.f));
     if (ImGui::Button((char const*)(u8"\ue0ae" "## controller button"), { 0.f, itemSize.y }))
     {
-        m_displayGraphWindow = !buttonState;
+        displayGraphWindow = !buttonState;
     }
     if (buttonState)
         ImGui::PopStyleColor();

@@ -274,6 +274,8 @@ private:
     bool FolderDialog(std::string& m_filepath);
     bool FileDialog(bool bOpen, char const* filters, std::string& m_filepath);
 
+    void SetupIniHandler();
+
 private:
     RTXMGDemoApp& m_app;
 

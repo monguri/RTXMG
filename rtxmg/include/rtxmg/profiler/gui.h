@@ -62,11 +62,13 @@ class ProfilerGUI
     struct ProfilingWindow
     {
         ImVec2    pos = ImVec2(0, 0);
-        ImGuiCond cond = ImGuiCond(0);
+        ImGuiCond cond = ImGuiCond_FirstUseEver;
         ImVec2    pivot = ImVec2(1, 0);
         ImVec2    size = ImVec2(800, 250);
         bool      resetLayout = false;
     } profilingWindow;
+
+    bool displayGraphWindow = true;
 
   public:
     template <typename... SamplerGroup>
@@ -76,9 +78,6 @@ class ProfilerGUI
 
     void BuildControllerUI( ImFont *iconicFont, ImPlotContext *plotContext );
     void BuildFrequencySelectorUI();
-
-    bool m_displayGraphWindow = true;
-
 };
 
 template <typename... SamplerGroup>
@@ -89,9 +88,9 @@ inline void ProfilerGUI::BuildUI( ImFont *iconicFont, ImPlotContext *context, Sa
 
     BuildControllerUI(iconicFont, context);
 
-    if (m_displayGraphWindow)
+    if (displayGraphWindow)
     {
-        ImGui::SetNextWindowCollapsed(true, ImGuiCond_Once); // Collapse the window by default
+        ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver); // Collapse the window by default
         if (profilingWindow.resetLayout)
         {
             ImGui::SetNextWindowPos(profilingWindow.pos, profilingWindow.cond, profilingWindow.pivot);
@@ -99,7 +98,7 @@ inline void ProfilerGUI::BuildUI( ImFont *iconicFont, ImPlotContext *context, Sa
         }
         ImGui::SetNextWindowBgAlpha(.65f);
 
-        if (ImGui::Begin("Profiler", &m_displayGraphWindow, ImGuiWindowFlags_None))
+        if (ImGui::Begin("Profiler", &displayGraphWindow, ImGuiWindowFlags_None))
         {
             BuildFrequencySelectorUI();
 
