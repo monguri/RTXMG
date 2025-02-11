@@ -116,7 +116,7 @@ Vulkan
 Tools
  * [nv_cluster_builder](https://github.com/nvpro-samples/nv_cluster_builder) 
    spatial clustering algorithms for triangle meshes (C++ library)
- * [nv_cluster_lod_builder](https://github.com/nvpro-samples/vk_partitioned_tlas)
+ * [nv_cluster_lod_builder](https://github.com/nvpro-samples/nv_cluster_lod_builder)
    continuous level of detail (LOD) for triangle meshes (C++ library)
 
 ## Citation
