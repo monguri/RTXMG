@@ -102,10 +102,6 @@ namespace stats
         float stencilCountAvg = 0;
         std::vector<uint32_t> stencilCountHistogram;
 
-        // buffer storing per-surface topology 'quality' factor
-        nvrhi::BufferHandle topologyQuality;
-        donut::engine::DescriptorHandle topologyQualityBindlessDescriptor;
-
         std::vector<std::string> topologyRecommendations;
 
         bool IsCatmarkTopology(float* ratio = nullptr) const
@@ -179,9 +175,6 @@ namespace stats
 
         std::vector<SurfaceTableStats> surfaceTableStats;
 
-        nvrhi::BufferHandle surfaceTopologyQualityBuffers;
-
-        void Finalize(nvrhi::ICommandList* commandList);
 
         // run-time evaluation
 

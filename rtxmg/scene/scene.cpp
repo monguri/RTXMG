@@ -363,8 +363,6 @@ bool RTXMGScene::LoadWithExecutor(const std::filesystem::path& filename,
         m_topologyMaps = topologyCache.InitDeviceData(m_DescriptorTable, commandList);
 
         m_inputPath = sanitizedFilePath.lexically_normal().generic_string();
-
-        stats::evaluatorSamplers.Finalize(commandList);
     }
     commandList->close();
     m_Device->executeCommandList(commandList);

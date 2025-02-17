@@ -35,6 +35,8 @@ using namespace donut::math;
 
 #define RTXMG_NVAPI_SHADER_EXT_SLOT 1000
 
+static const uint32_t kInvalidBindlessIndex = ~0u;
+
 // Camera struct for constant bfuffer
 struct CameraConstants
 {
@@ -169,6 +171,48 @@ struct RenderParams
 
     float4x4 envmapRotation;
     float4x4 envmapRotationInv;
+};
+
+struct SubdInstance
+{
+    // Bindless buffer indices
+    uint32_t plansBindlessIndex;
+    uint32_t stencilMatrixBindlessIndex;
+    uint32_t subpatchTreesBindlessIndex;
+    uint32_t patchPointIndicesBindlessIndex;
+
+    uint32_t vertexSurfaceDescriptorBindlessIndex;
+    uint32_t vertexControlPointIndicesBindlessIndex;
+    uint32_t positionsBindlessIndex;
+    uint32_t positionsPrevBindlessIndex;
+
+    uint32_t surfaceToGeometryIndexBindlessIndex;
+    uint32_t topologyQualityBindlessIndex;
+    uint32_t isolationLevel;
+
+    float3x4 prevLocalToWorld;
+    float3x4 worldToLocal;
+
+#ifdef __cplusplus
+    SubdInstance()
+        : plansBindlessIndex(kInvalidBindlessIndex)
+        , stencilMatrixBindlessIndex(kInvalidBindlessIndex)
+        , subpatchTreesBindlessIndex(kInvalidBindlessIndex)
+        , patchPointIndicesBindlessIndex(kInvalidBindlessIndex)
+        , vertexSurfaceDescriptorBindlessIndex(kInvalidBindlessIndex)
+        , vertexControlPointIndicesBindlessIndex(kInvalidBindlessIndex)
+        , positionsBindlessIndex(kInvalidBindlessIndex)
+        , positionsPrevBindlessIndex(kInvalidBindlessIndex)
+        , surfaceToGeometryIndexBindlessIndex(kInvalidBindlessIndex)
+        , topologyQualityBindlessIndex(kInvalidBindlessIndex)
+        , isolationLevel(0)
+    {}
+
+    bool operator==(const SubdInstance& other) const
+    {
+        return memcmp(this, &other, sizeof(*this)) == 0;
+    }
+#endif
 };
 
 #endif // RENDER_PARAMS_H

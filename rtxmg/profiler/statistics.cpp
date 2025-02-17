@@ -193,21 +193,6 @@ namespace stats {
         }
     }
 
-    void EvaluatorSamplers::Finalize(nvrhi::ICommandList* commandList)
-    {
-        // upload an array of indices for the surface table quality buffers
-
-        std::vector<uint32_t> indices(surfaceTableStats.size());
-        if (uint32_t ntables = (uint32_t)surfaceTableStats.size())
-        {
-            for (uint32_t i = 0; i < ntables; ++i)
-            {
-                indices[i] = surfaceTableStats[i].topologyQualityBindlessDescriptor.Get();
-            }
-        }
-        surfaceTopologyQualityBuffers = CreateAndUploadBuffer<uint32_t>(indices, "surface topology quality indices", commandList);
-    }
-
     void EvaluatorSamplers::BuildUI(ImFont *iconicFont, ImPlotContext *plotContext) const
     {
         char buf[32];

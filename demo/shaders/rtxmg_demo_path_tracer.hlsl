@@ -89,7 +89,7 @@ StructuredBuffer<float> t_EnvMapConditionalFunc: register(t7);
 StructuredBuffer<float> t_EnvMapMarginalFunc : register(t8);
 StructuredBuffer<ClusterShadingData> t_ClusterShadingData : register(t9);
 StructuredBuffer<float3> t_ClusterVertexPositions : register(t10);
-StructuredBuffer<uint32_t> t_TopologyQuality : register(t11);
+StructuredBuffer<SubdInstance> t_SubdInstances : register(t11);
 
 SamplerState s_MaterialSampler : register(s0);
 
@@ -366,13 +366,13 @@ MaterialSample RTXMG_EvaluateSceneMaterial(GeometrySample gs, float3 geometryNor
     }
     else if (colorMode == ColorMode::COLOR_BY_TOPOLOGY)
     {
-        uint32_t instanceId = InstanceID() >> 1;
-        ByteAddressBuffer surfaceValues = t_BindlessBuffers[NonUniformResourceIndex(t_TopologyQuality[instanceId])];
-
         uint32_t clusterId = NvRtGetClusterID();
         uint32_t surfaceId = t_ClusterShadingData[clusterId].m_surfaceId;
 
-        uint16_t surfaceValue = surfaceValues.Load<uint16_t>(surfaceId * sizeof(uint16_t));
+        SubdInstance subdInstance = t_SubdInstances[InstanceID()];
+        StructuredBuffer<uint16_t> topologyQuality = ResourceDescriptorHeap[NonUniformResourceIndex(subdInstance.topologyQualityBindlessIndex)];
+        uint16_t surfaceValue = topologyQuality[surfaceId];
+
         float value = float(surfaceValue) / 255.f;
 
         result.baseColor = lerp(float3(0.f, 1.f, 0.f), float3(1.f, 0.f, 0.f), value);

@@ -463,7 +463,7 @@ void RTXMGRenderer::Launch(nvrhi::ICommandList* commandList,
             nvrhi::BindingSetItem::StructuredBuffer_SRV(8, marginalFunc),
             nvrhi::BindingSetItem::StructuredBuffer_SRV(9, m_sceneAccels->clusterShadingDataBuffer),
             nvrhi::BindingSetItem::StructuredBuffer_SRV(10, m_sceneAccels->clusterVertexPositionsBuffer),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(11, stats::evaluatorSamplers.surfaceTopologyQualityBuffers),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(11, m_subdInstancesBuffer),
             nvrhi::BindingSetItem::Sampler(0, m_commonPasses->m_LinearWrapSampler),
             nvrhi::BindingSetItem::Texture_UAV(0, m_outputTextures[uint32_t(OutputTexture::Accumulation)]),
             nvrhi::BindingSetItem::Texture_UAV(1, m_outputTextures[uint32_t(OutputTexture::Depth)]),
@@ -1062,7 +1062,7 @@ void RTXMGRenderer::UpdateAccelerationStructures(const TessellatorConfig &tessCo
         subdInstance.positionsBindlessIndex = getDescriptorHeapIndex(mesh->m_positionsDescriptor);
         subdInstance.positionsPrevBindlessIndex = getDescriptorHeapIndex(mesh->m_positionsPrevDescriptor);
         subdInstance.surfaceToGeometryIndexBindlessIndex = getDescriptorHeapIndex(mesh->m_surfaceToGeometryIndexDescriptor);
-
+        subdInstance.topologyQualityBindlessIndex = getDescriptorHeapIndex(mesh->m_topologyQualityDescriptor);
         subdInstance.isolationLevel = mesh->m_dynamicIsolationLevel;
 
         affineToColumnMajor(node->GetPrevLocalToWorldTransformFloat(), subdInstance.prevLocalToWorld);

@@ -76,8 +76,6 @@ public:
 
         nvrhi::BufferHandle patchPoints;
         nvrhi::BufferHandle patchPointsOffsets;
-
-        nvrhi::BufferHandle patch_points_readback;
     };
 
     //
@@ -98,12 +96,15 @@ public:
     SurfaceTableDeviceData m_texcoordDeviceData;
     nvrhi::BufferHandle m_texcoordsBuffer;
     nvrhi::BufferHandle m_surfaceToGeometryIndexBuffer;
+    nvrhi::BufferHandle m_topologyQualityBuffer;
 
     donut::engine::DescriptorHandle m_vertexSurfaceDescriptorDescriptor;
     donut::engine::DescriptorHandle m_vertexControlPointIndicesDescriptor;
     donut::engine::DescriptorHandle m_positionsDescriptor;
     donut::engine::DescriptorHandle m_positionsPrevDescriptor;
     donut::engine::DescriptorHandle m_surfaceToGeometryIndexDescriptor;   
+
+    donut::engine::DescriptorHandle m_topologyQualityDescriptor;
 
 public:
     Shape const* GetShape() const { return m_shape.get(); }

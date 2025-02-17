@@ -92,8 +92,7 @@ static void gatherStatistics(Shape const& shape,
     Far::TopologyRefiner const& refiner,
     Tmr::TopologyMap const& topologyMap,
     Tmr::SurfaceTable const& surfTable,
-    std::shared_ptr<donut::engine::DescriptorTableManager> descriptorTable,
-    nvrhi::ICommandList* commandList)
+    std::vector<uint16_t> &topologyQuality)
 {
     int nsurfaces = surfTable.GetNumSurfaces();
 
@@ -114,8 +113,8 @@ static void gatherStatistics(Shape const& shape,
 
     surfStats.byteSize = surfTable.GetByteSize();
 
-    std::vector<uint16_t> topologyQuality(nsurfaces, 0);
-
+    topologyQuality.resize(nsurfaces, 0);
+    
     size_t stencilSum = 0;
 
     for (int surfIndex = 0; surfIndex < nsurfaces; ++surfIndex)
@@ -294,11 +293,6 @@ static void gatherStatistics(Shape const& shape,
 
     surfStats.BuildTopologyRecommendations();
 
-    surfStats.topologyQuality = CreateAndUploadBuffer<uint16_t>(
-        topologyQuality, "topology quality", commandList);
-    surfStats.topologyQualityBindlessDescriptor = descriptorTable->CreateDescriptorHandle(
-        nvrhi::BindingSetItem::StructuredBuffer_SRV(0, surfStats.topologyQuality));
-
     evalStats.surfaceTablesByteSizeTotal += surfStats.byteSize;
     evalStats.hasBadTopology |= (!surfStats.topologyRecommendations.empty());
 
@@ -390,7 +384,14 @@ SubdivisionSurface::SubdivisionSurface(TopologyCache& topologyCache,
     m_surface_table =
         tableFactory.Create(*refiner, topologyMap, options);
 
-    gatherStatistics(*shape, *refiner, topologyMap, *m_surface_table, descriptorTable, commandList);
+    std::vector<uint16_t> topologyQuality;
+    gatherStatistics(*shape, *refiner, topologyMap, *m_surface_table, topologyQuality);
+
+    m_topologyQualityBuffer = CreateAndUploadBuffer<uint16_t>(
+        topologyQuality, "topology quality", commandList);
+
+    m_topologyQualityDescriptor = descriptorTable->CreateDescriptorHandle(
+        nvrhi::BindingSetItem::StructuredBuffer_SRV(0, m_topologyQualityBuffer));
 
     InitDeviceData(m_surface_table, commandList);
 
