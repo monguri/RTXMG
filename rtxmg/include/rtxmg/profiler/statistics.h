@@ -81,6 +81,9 @@ namespace stats
     {
         std::string name;
 
+        size_t indexBufferSize = 0;
+        size_t vertCountBufferSize = 0;
+
         size_t byteSize = 0;
         size_t surfaceCount = 0;
 
@@ -164,9 +167,6 @@ namespace stats
     struct EvaluatorSamplers
     {
         std::string name = "Evaluator";
-
-        size_t indexBufferSize = 0;
-        size_t vertCountBufferSize = 0;
 
         TopologyMapStats topologyMapStats;
 

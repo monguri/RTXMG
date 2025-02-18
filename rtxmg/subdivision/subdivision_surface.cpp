@@ -98,9 +98,6 @@ static void gatherStatistics(Shape const& shape,
 
     auto& evalStats = stats::evaluatorSamplers;
 
-    evalStats.indexBufferSize = refiner.GetLevel(0).GetNumFaceVertices() * sizeof(uint32_t);
-    evalStats.vertCountBufferSize = refiner.GetLevel(0).GetNumFaces() * sizeof(uint32_t);
-
     evalStats.topologyMapStats = TopologyMap::ComputeStatistics(topologyMap);
 
     static constexpr int const histogramSize = 50;

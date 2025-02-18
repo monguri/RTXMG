@@ -214,9 +214,9 @@ namespace stats {
                 ImGui::Text("%s", buf);
             }
             else if constexpr (std::is_same_v<T, float>)
-                ImGui::Text("%9.1f", value);
+                ImGui::Text("%.1f", value);
             else if constexpr (std::is_integral_v<T>)
-                ImGui::Text("% 9ld", int64_t(value));
+                ImGui::Text("%d", int64_t(value));
             if (tooltip && ImGui::IsItemHovered())
                 ImGui::SetTooltip("%s", tooltip);
         };
@@ -511,14 +511,7 @@ namespace stats {
                         ImGui::SetTooltip("%zu bytes.", m_size);
                 };
 
-            buildRow("Subd index buffer", evaluatorSamplers.indexBufferSize, false,
-                "Size of sub-d control cage index buffer.\n"
-                "note: this buffer is not used for any run-time calculations and\n"
-                "is provided for comparison only.\n");
-            buildRow("Subd vertCounts buffer", evaluatorSamplers.vertCountBufferSize, false,
-                "Size of sub-d control cage face-vertex count buffer.\n"
-                "note: this buffer is not used for any run-time calculations and\n"
-                "is provided for comparison only.\n");
+            
             buildRow("Topology map", evaluatorSamplers.topologyMapStats.plansByteSize, false,
                 "Total m_size of topology map.\n"
                 "note: there should be only 1 topology map shared by all the sub-d meshes in the scene.\n");
@@ -630,9 +623,9 @@ namespace stats {
                 ImGui::Text("%s", buf);
             }
             else if constexpr (std::is_same_v<T, float>)
-                ImGui::Text("%9.1f", value);
+                ImGui::Text("%.1f", value);
             else if constexpr (std::is_integral_v<T>)
-                ImGui::Text("% 9ld", int64_t(value));
+                ImGui::Text("%d", int64_t(value));
             if (tooltip && ImGui::IsItemHovered())
                 ImGui::SetTooltip("%s", tooltip);
         };
