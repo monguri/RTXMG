@@ -35,7 +35,7 @@ donut_compile_shaders(
 add_executable(${app} 
     ${sources} 
 )
-target_link_libraries(${app} PRIVATE envmap rtxmg donut_render donut_app donut_engine implot)
+target_link_libraries(${app} PUBLIC envmap rtxmg donut_render donut_app donut_engine implot)
 
 if(ENABLE_AUDIO_ENGINE)
     if(TARGET audio_engine)
@@ -72,3 +72,42 @@ if(WIN32)
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_RUNTIME_DLLS:${app}> $<TARGET_FILE_DIR:${app}>
         COMMAND_EXPAND_LISTS)
 endif()
+
+#
+# Installation & packaging
+#
+
+install(TARGETS ${app} DESTINATION "bin")
+
+install(DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders" DESTINATION "bin" )
+
+if(WIN32)
+    install(FILES $<TARGET_RUNTIME_DLLS:${app}> DESTINATION "bin")
+
+    # generate some shortcuts to run various scenes
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/run_rtxmg.bat" "start \"\" bin/rtxmg_demo.exe")
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/run_rtxmg.bat" DESTINATION ".")
+
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/run_amy_kitchenset.bat" "start \"\" bin/rtxmg_demo.exe -mf amy_kitchenset.scene.json")
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/run_amy_kitchenset.bat" DESTINATION ".")
+
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/run_barbarian.bat" "start \"\" bin/rtxmg_demo.exe -mf barbarian_pt.scene.json")
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/run_barbarian.bat" DESTINATION ".")
+
+    set(_os "win64")
+elseif (UNIX AND NOT APPLE)
+    set(_os "linux64")
+endif()
+
+if(DONUT_D3D_AGILITY_SDK_ENABLED)
+    install(DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/D3D12" DESTINATION "bin" )
+endif()
+
+if(IS_DIRECTORY "${PROJECT_SOURCE_DIR}/assets")
+    install(DIRECTORY "${PROJECT_SOURCE_DIR}/assets" DESTINATION "." )
+endif()
+
+set(CPACK_GENERATOR "ZIP")
+set(CPACK_PACKAGE_FILE_NAME "${CMAKE_PROJECT_NAME}.${PROJECT_VERSION}.${_os}")
+
+include(CPack)

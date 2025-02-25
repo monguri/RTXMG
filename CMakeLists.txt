@@ -1,7 +1,7 @@
 
 cmake_minimum_required(VERSION 3.10)
 
-project(rtxmg)
+project(rtxmg LANGUAGES C CXX VERSION 0.9)
 
 set(CMAKE_CONFIGURATION_TYPES "Debug;Release;RelWithDebInfo;ReleaseAsan" CACHE STRING "Configurations" FORCE)
 set(CMAKE_CXX_STANDARD 20)
@@ -56,6 +56,7 @@ set(DONUT_STREAMLINE_FETCH_URL "https://github.com/NVIDIAGameWorks/Streamline.gi
 set(DONUT_STREAMLINE_FETCH_TAG "v2.7.2" CACHE STRING "")
 set(STREAMLINE_FEATURE_DLSS_SR ON CACHE BOOL "" FORCE)
 set(STREAMLINE_FEATURE_DLSS_RR ON CACHE BOOL "" FORCE)
+set(STREAMLINE_INSTALL_DIR "bin" CACHE STRING "" FORCE)
 
 ####################################
 # NVAPI
@@ -99,7 +100,7 @@ list(APPEND RTXMG_SHADERS_IGNORED_INCLUDES
 )
 
 add_subdirectory(extern/donut)
-add_subdirectory(extern/osd_lite)
+add_subdirectory(extern/osd_lite EXCLUDE_FROM_ALL)
 add_subdirectory(rtxmg)
 add_subdirectory(demo)
 

@@ -1,0 +1,20 @@
+
+
+  RTX MegaGeometry (RTXMG)
+  Copyright (C) 2019, NVIDIA CORPORATION
+  All rights reserved.
+
+  https://github.com/NVIDIA-RTX/RTXMG
+
+NVIDIA, the NVIDIA logo, GeForce, GeForce GTX, GeForce RTX, NVIDIA GameWorks,
+and NVIDIA RTX are trademarks and/or registered trademarks of NVIDIA Corporation
+in the U.S. and/or other countries. Other company and product names may be
+trademarks of the respective companies with which they are associated.
+NVIDIA's trademarks may be used publicly with permission only from NVIDIA,
+and nothing in this Agreement shall be construed as granting such permission.
+Fair use of NVIDIA's trademarks in advertising and promotion of NVIDIA products
+requires proper acknowledgment;
+
+https://www.nvidia.com/content/dam/en-zz/Solutions/about-us/documents/NVIDIA-Trademark-and-Logo-Usage-Guidelines.pdf
+
+
