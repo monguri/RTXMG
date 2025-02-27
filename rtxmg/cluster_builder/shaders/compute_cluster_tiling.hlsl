@@ -105,7 +105,7 @@ bool HasLimit(uint32_t iSurface)
 
 bool HiZIsVisible(Box3 aabb)
 {
-    // tests visibility of a sccren-space aligned aabb against hi-z buffer
+    // tests visibility of a screen-space aligned aabb against hi-z buffer
     if (aabb.m_min.z > 0.f)
     {
         float oldminy = aabb.m_min.y;
@@ -160,8 +160,8 @@ float FrustumVisibility(SubdivisionEvaluatorHLSL subd, uint3 threadIdx)
         float3 cp = subd.m_vertexControlPoints[index];
 
         float4 p = { cp.x, cp.y, cp.z, 1.0f };
-        float4 pWorld = mul(g_Params.localToWorld, p);
-        float4 pClip = mul(g_Params.matWorldToClip, pWorld);
+        float3 pWorld = mul(g_Params.localToWorld, p);
+        float4 pClip = mul(g_Params.matWorldToClip, float4(pWorld, 1.0f));
 
         uint16_t bits = 0u;
         bits |= (uint16_t(pClip.x > pClip.w) << 0);

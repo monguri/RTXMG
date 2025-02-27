@@ -79,31 +79,6 @@ struct Box3
     {
         Init();
     }
-
-    static Box3 Transform(float4x4 m, Box3 b)
-    {
-        Box3 result;
-
-        const float3 b000 = b.m_min;
-        const float3 b001 = float3(b.m_min.x, b.m_min.y, b.m_max.z);
-        const float3 b010 = float3(b.m_min.x, b.m_max.y, b.m_min.z);
-        const float3 b011 = float3(b.m_min.x, b.m_max.y, b.m_max.z);
-        const float3 b100 = float3(b.m_max.x, b.m_min.y, b.m_min.z);
-        const float3 b101 = float3(b.m_max.x, b.m_min.y, b.m_max.z);
-        const float3 b110 = float3(b.m_max.x, b.m_max.y, b.m_min.z);
-        const float3 b111 = b.m_max;
-
-        result.Include(float3(m * float4(b000, 1.0f)));
-        result.Include(float3(m * float4(b001, 1.0f)));
-        result.Include(float3(m * float4(b010, 1.0f)));
-        result.Include(float3(m * float4(b011, 1.0f)));
-        result.Include(float3(m * float4(b100, 1.0f)));
-        result.Include(float3(m * float4(b101, 1.0f)));
-        result.Include(float3(m * float4(b110, 1.0f)));
-        result.Include(float3(m * float4(b111, 1.0f)));
-
-        return result;
-    }
 #endif
 };
 

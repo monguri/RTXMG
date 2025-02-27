@@ -113,7 +113,7 @@ protected:
         nvrhi::IBuffer* geometryBuffer,
         nvrhi::IBuffer* materialBuffer,
         nvrhi::ISampler* displacementSampler,
-        donut::math::affine3 localToWorld,
+        const donut::math::affine3& localToWorld,
         uint32_t surfaceOffset,
         uint32_t surfaceCount, 
         const nvrhi::BufferRange& tessCounterRange,

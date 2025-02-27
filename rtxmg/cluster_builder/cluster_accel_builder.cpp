@@ -743,7 +743,7 @@ void ClusterAccelBuilder::ComputeInstanceClusterTiling(const SubdivisionSurface&
     nvrhi::IBuffer* geometryBuffer,
     nvrhi::IBuffer* materialBuffer,
     nvrhi::ISampler* displacementSampler,
-    math::affine3 localToWorld,
+    const donut::math::affine3& localToWorld,
     uint32_t surfaceOffset,
     uint32_t surfaceCount,
     const nvrhi::BufferRange& tessCounterRange,
@@ -753,7 +753,7 @@ void ClusterAccelBuilder::ComputeInstanceClusterTiling(const SubdivisionSurface&
 
     ComputeClusterTilingParams params = {};
     params.matWorldToClip = m_tessellatorConfig.camera->GetProjectionMatrix() * m_tessellatorConfig.camera->GetViewMatrix();
-    params.localToWorld = transpose(affineToHomogeneous(localToWorld));
+    affineToColumnMajor(localToWorld, params.localToWorld.m_data); // params.localToWorld;
     params.viewportSize.x = float(m_tessellatorConfig.viewportSize.x);
     params.viewportSize.y = float(m_tessellatorConfig.viewportSize.y);
     params.firstGeometryIndex = firstGeometryIndex;
@@ -761,7 +761,7 @@ void ClusterAccelBuilder::ComputeInstanceClusterTiling(const SubdivisionSurface&
     params.coarseTessellationRate = m_tessellatorConfig.coarseTessellationRate;
     params.fineTessellationRate = m_tessellatorConfig.fineTessellationRate;
     params.cameraPos = m_tessellatorConfig.camera->GetEye();
-    params.aabb = Box3::Transform(params.localToWorld, subdivisionSurface.m_aabb);
+    params.aabb = subdivisionSurface.m_aabb * localToWorld;
     params.enableBackfaceVisibility = m_tessellatorConfig.enableBackfaceVisibility;
     params.enableFrustumVisibility = m_tessellatorConfig.enableFrustumVisibility;
     params.enableHiZVisibility = m_tessellatorConfig.enableHiZVisibility && m_tessellatorConfig.zbuffer != nullptr;
