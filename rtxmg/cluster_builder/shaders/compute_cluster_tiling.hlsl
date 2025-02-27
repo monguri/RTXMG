@@ -667,7 +667,6 @@ void main(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
         iSurface);
 
     // Frustum "culling"
-    // corresponds to the `set_surface_wave` call in OCB
     float visibility = CalculateVisibility(subd, threadIdx);
 
     // -------------------------------------------------------------------------

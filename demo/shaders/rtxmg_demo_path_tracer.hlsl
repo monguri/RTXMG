@@ -143,12 +143,10 @@ uint3 ClusterGetVertexIndices(uint32_t primId)
     return indices;
 }
 
-
-inline uint16_t2 Index2D(uint32_t index_linear, uint16_t line_stride)
+inline uint16_t2 Index2D(uint32_t indexLinear, uint16_t lineStride)
 {
-    return uint16_t2(uint16_t(index_linear % line_stride), uint16_t(index_linear / line_stride));
+    return uint16_t2(uint16_t(indexLinear % lineStride), uint16_t(indexLinear / lineStride));
 }
-
 
 // Given a cluster triangle id, find the uv coordinates in the parametric surface
 // that generated the triangle's three corners.

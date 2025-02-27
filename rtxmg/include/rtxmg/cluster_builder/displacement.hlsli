@@ -70,12 +70,12 @@ LimitFrame DoDisplacement(StructuredBuffer<LinearSurfaceDescriptor> surfaceDescr
         
     float displacement = displacementTex.SampleLevel( dispSampler, texcoord.uv, 0 ).r;
     
-        const float2 dsdt = float2(1.0f / 1024, 1.0f / 1024);
+    const float2 dsdt = float2(1.0f / 1024, 1.0f / 1024);
     // compute derivatives of displacement map, (dD/du) and (dD/dv) from finite differences:
-    float2 texcoord_du         = texcoord.uv + dsdt.x * texcoord.deriv1;
-    float2 texcoord_dv         = texcoord.uv + dsdt.y * texcoord.deriv2;
-    float  displacement2       = displacementTex.SampleLevel(dispSampler, texcoord_dv, 0 ).r;
-    float  displacement1       = displacementTex.SampleLevel(dispSampler, texcoord_du, 0 ).r;
+    float2 texcoordDu         = texcoord.uv + dsdt.x * texcoord.deriv1;
+    float2 texcoordDv         = texcoord.uv + dsdt.y * texcoord.deriv2;
+    float  displacement1       = displacementTex.SampleLevel(dispSampler, texcoordDu, 0 ).r;
+    float  displacement2       = displacementTex.SampleLevel(dispSampler, texcoordDv, 0 ).r;
     float  displacementDeriv1 = ( displacement1 - displacement ) / dsdt.x;
     float  displacementDeriv2 = ( displacement2 - displacement ) / dsdt.y;
     // compute displaced parital derivates

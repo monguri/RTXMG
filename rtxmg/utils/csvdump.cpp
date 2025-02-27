@@ -38,7 +38,7 @@ void WriteTexToCSV(nvrhi::ICommandList* commandList, nvrhi::ITexture* tex, char 
     float const* pData = static_cast<float const*>(commandList->getDevice()->mapStagingTexture(
         staging, nvrhi::TextureSlice(), nvrhi::CpuAccessMode::Read, &rowPitch));
 
-    std::ofstream debug_dump(filename);
+    std::ofstream debugDump(filename);
 
     for (uint32_t y = 0; y < desc.height; y++)
     {
@@ -47,11 +47,11 @@ void WriteTexToCSV(nvrhi::ICommandList* commandList, nvrhi::ITexture* tex, char 
             float z = pData[y * rowPitch / sizeof(float) + x];
             if (isinf(z))
                 z = -1.0f;
-            debug_dump << std::setw(8) << std::right << z;
+            debugDump << std::setw(8) << std::right << z;
             if (x < desc.width - 1)
-                debug_dump << ", ";
+                debugDump << ", ";
         }
-        debug_dump << std::endl;
+        debugDump << std::endl;
     }
 
     commandList->open();
@@ -61,17 +61,17 @@ void WriteBufferToCSV(nvrhi::ICommandList* commandList, RTXMGBuffer<float>& buf,
 {
     auto values = buf.Download(commandList);
 
-    std::ofstream debug_dump(filename);
+    std::ofstream debugDump(filename);
 
     for (uint32_t i = 0; i < values.size(); i++)
     {
-        debug_dump << std::setw(8) << std::right << values[i];
+        debugDump << std::setw(8) << std::right << values[i];
         if (i < values.size() - 1)
         {
             if (i % width == width - 1)
-                debug_dump << std::endl;
+                debugDump << std::endl;
             else
-                debug_dump << ", ";
+                debugDump << ", ";
         }
     }
 }

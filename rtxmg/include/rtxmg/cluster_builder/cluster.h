@@ -211,11 +211,11 @@ struct Cluster
 
     inline uint32_t TrianglesPerCluster() { return 2 * QuadsPerCluster(); }
 
-    uint16_t2 Linear2Idx2D(uint16_t index_linear)
+    uint16_t2 Linear2Idx2D(uint16_t indexLinear)
     {
         const uint16_t vertices_u = (uint16_t)(sizeX + 1);
-        return uint16_t2((uint16_t)(index_linear % vertices_u),
-            (uint16_t)(index_linear / vertices_u));
+        return uint16_t2((uint16_t)(indexLinear % vertices_u),
+            (uint16_t)(indexLinear / vertices_u));
     }
 
     inline bool Equals(Cluster other)

@@ -138,14 +138,14 @@ void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_Gr
 
     {
         // wave wide loop
-        for (uint16_t point_index = (uint16_t)  threadIdx.x; point_index < rCluster.VerticesPerCluster(); point_index += 32)
+        for (uint16_t pointIndex = (uint16_t)threadIdx.x; pointIndex < rCluster.VerticesPerCluster(); pointIndex += 32)
         {
             float2 uv;
-            uv = rSampler.UV(rCluster.Linear2Idx2D(point_index) + rCluster.offset, (ClusterPattern)g_TessParams.clusterPattern);
+            uv = rSampler.UV(rCluster.Linear2Idx2D(pointIndex) + rCluster.offset, (ClusterPattern)g_TessParams.clusterPattern);
 
             const LimitFrame limit = EvaluateSubd(iSurface, uv);
 
-            GathererWriteLimit(limit, rCluster, point_index);
+            GathererWriteLimit(limit, rCluster, pointIndex);
         }
     }
 }

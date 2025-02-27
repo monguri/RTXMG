@@ -28,7 +28,7 @@
 
 #include <iostream>
 
-int GetUniqueFileIndex(const char* base_name, const char* extension)
+int GetUniqueFileIndex(const char* baseName, const char* extension)
 {
     // Avoid overwriting an existing screenshot : scan the default output directory
     // for existing files with pattern 'screenshot_xxxx.bmp' to find the highest index.
@@ -39,10 +39,10 @@ int GetUniqueFileIndex(const char* base_name, const char* extension)
         if (it.path().extension() != extension)
             continue;
         std::string filename = it.path().filename().generic_string();
-        if (std::strstr(filename.c_str(), base_name) != filename.c_str())
+        if (std::strstr(filename.c_str(), baseName) != filename.c_str())
             continue;
-        int existing_index = std::atoi(filename.c_str() + strlen(base_name));
-        index = std::max(index, existing_index);
+        int existingIndex = std::atoi(filename.c_str() + strlen(baseName));
+        index = std::max(index, existingIndex);
     }
     return index + 1;
 }
