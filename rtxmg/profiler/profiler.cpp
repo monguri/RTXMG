@@ -119,12 +119,6 @@ void Profiler::FrameEnd()
 
 }
 
-void Profiler::FrameSync()
-{
-
-}
-
-
 void Profiler::FrameResolve()
 {
     auto resolveTimers = []( auto& timers ) {
@@ -136,7 +130,6 @@ void Profiler::FrameResolve()
 
     if( !m_gpuTimers.empty() )
     {
-        FrameSync();
         resolveTimers( m_gpuTimers );
     }
 }

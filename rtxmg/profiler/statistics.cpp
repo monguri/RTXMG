@@ -26,22 +26,15 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 //
 
-// clang-format off
-
-
-#include <donut/core/log.h>
 #include <numeric>
 #include <opensubdiv/tmr/topologyMap.h>
-
-#include <implot.h>
-
-// clang-format on
 
 #include <cmath>
 #include <locale>
 #include <string>
 #include <sstream>
 
+#include <imgui_internal.h>
 #include <implot.h>
 
 #include "rtxmg/profiler/gui.h"
@@ -193,8 +186,24 @@ namespace stats {
         }
     }
 
-    void EvaluatorSamplers::BuildUI(ImFont *iconicFont, ImPlotContext *plotContext) const
+    void EvaluatorSamplers::BuildUI(ImFont *iconicFont, ImPlotContext *plotContext)
     {
+        if (hasBadTopology)
+        {
+            ImGui::PushFont(iconicFont);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.223f, 0.325f, 0.447f, 1.f));
+            ImGui::SeparatorText((char const*)(u8"\ue08F" "## recommendations"));
+            ImGui::PopStyleColor();
+            ImGui::PopFont();
+
+            ImGui::TextWrapped("Switch to the 'Topology Quality' color mode in the settings "
+                "window to visualize problem areas in the mesh. Areas in red are in need of attention");
+
+            m_topologyQualityButtonPressed = ImGui::Button("Topology Quality");
+            if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
+                ImGui::SetTooltip("Switches the color mode to 'Toplogy Quality'.");
+            ImGui::Spacing();
+        }
         char buf[32];
 
         const float fontScale = ImGui::GetIO().FontGlobalScale;

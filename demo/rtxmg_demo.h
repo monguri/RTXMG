@@ -90,7 +90,7 @@ constexpr auto kColorModeNames = std::to_array<const char *>(
     "MicroTri ID",
     "Cluster UV",
     "MicroTri Area",
-    "SubD Topology"
+    "Topology Quality"
 });
 static_assert(kColorModeNames.size() == ColorMode::COLOR_MODE_COUNT);
 

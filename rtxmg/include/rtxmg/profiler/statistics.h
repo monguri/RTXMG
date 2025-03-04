@@ -166,11 +166,12 @@ namespace stats
 
     struct EvaluatorSamplers
     {
-        std::string name = "Evaluator";
+        std::string name = "Subdivision Evaluator";
 
         TopologyMapStats topologyMapStats;
 
         bool hasBadTopology = false;
+        bool m_topologyQualityButtonPressed = false;
         size_t surfaceTablesByteSizeTotal = 0;
 
         std::vector<SurfaceTableStats> surfaceTableStats;
@@ -180,7 +181,7 @@ namespace stats
 
         Sampler<uint32_t> numLimitSamples = { .name = "Limit evaluations", };
 
-        void BuildUI(ImFont* iconicFont, ImPlotContext* plotContext) const;
+        void BuildUI(ImFont* iconicFont, ImPlotContext* plotContext);
     };
     extern EvaluatorSamplers evaluatorSamplers;
 

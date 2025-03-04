@@ -115,11 +115,7 @@ class Profiler
     // insert after the last timer is stopped in the frame
     void FrameEnd();
 
-    // blocks until all monitored device streams are synchronized with host
-    void FrameSync();
-
-    // benchmarks data for the frame: forces all timers to resolve elapsed time
-    // note: will block the calling thread until FrameSync() completes
+    // benchmarks data for the frame
     void FrameResolve();
 
     // Generic profiling timer with benchmarking functionality

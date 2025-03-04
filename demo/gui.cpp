@@ -1004,6 +1004,11 @@ void UserInterface::BuildUIMain(int2 windowSize)
     m_profiler.BuildUI<stats::FrameSamplers, stats::ClusterAccelSamplers, stats::EvaluatorSamplers, stats::MemUsageSamplers>(m_iconicFont, m_implot,
         stats::frameSamplers, stats::clusterAccelSamplers, stats::evaluatorSamplers, stats::memUsageSamplers);
 
+    if (stats::evaluatorSamplers.m_topologyQualityButtonPressed)
+    {
+        renderer.SetColorMode(COLOR_BY_TOPOLOGY);
+    }
+
     float profilerWidth = m_profiler.controllerWindow.size.x;
     float timelineWidth = float(width) - 30.f - profilerWidth;
 

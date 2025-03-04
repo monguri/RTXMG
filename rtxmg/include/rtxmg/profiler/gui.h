@@ -72,7 +72,7 @@ class ProfilerGUI
 
   public:
     template <typename... SamplerGroup>
-    void BuildUI( ImFont *iconicFont, ImPlotContext *plotContext, SamplerGroup const&... groups );
+    void BuildUI( ImFont *iconicFont, ImPlotContext *plotContext, SamplerGroup&... groups );
 
   private:
 
@@ -81,11 +81,8 @@ class ProfilerGUI
 };
 
 template <typename... SamplerGroup>
-inline void ProfilerGUI::BuildUI( ImFont *iconicFont, ImPlotContext *context, SamplerGroup const&... groups )
+inline void ProfilerGUI::BuildUI( ImFont *iconicFont, ImPlotContext *context, SamplerGroup&... groups )
 {
-    // Synchronize with device streams so timers can be polled safely by UI elements
-    Profiler::Get().FrameSync();
-
     BuildControllerUI(iconicFont, context);
 
     if (displayGraphWindow)
