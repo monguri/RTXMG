@@ -289,6 +289,4 @@ private:
 
     std::shared_ptr<audio::Engine> m_audioEngine;
     std::unique_ptr<audio::Voice> m_voice;
-
-    bool m_resetLayout = true;
 };

@@ -43,6 +43,10 @@
 
 #include "lerp_keyframes_params.h"
 
+
+#define GLFW_INCLUDE_NONE // Do not include any OpenGL headers
+#include <GLFW/glfw3.h>
+
 using namespace donut;
 
 namespace fs = std::filesystem;
@@ -558,6 +562,17 @@ void RTXMGDemoApp::BackBufferResized(const uint32_t width,
     m_cameraReset = true;
     m_camera.SetAspectRatio(float(width) / float(height));
     m_displaySize = int2(width, height);
+
+    // We need to cache here since we can't query the window during application quit
+    // Donut doesn't have a callback to the application for window pos, so we skip saving that
+    GLFWwindow* window = GetDeviceManager()->GetWindow();
+    m_windowState.isMaximized = glfwGetWindowAttrib(window, GLFW_MAXIMIZED) != 0;
+    m_windowState.isFullscreen = glfwGetWindowMonitor(window) != nullptr;
+    if (!m_windowState.isMaximized && !m_windowState.isFullscreen)
+    {
+        // Only save the non-maximized size
+        glfwGetWindowSize(window, &m_windowState.windowSize.x, &m_windowState.windowSize.y);
+    }
 }
 
 void RTXMGDemoApp::UpdateDLSSSettings()
@@ -1151,4 +1166,29 @@ float RTXMGDemoApp::GetCPUFrameTime() const
     return std::chrono::duration<float, std::milli>(m_currFrameStart -
         m_prevFrameStart)
         .count();
+}
+
+void RTXMGDemoApp::SetWindowState(const WindowState &state) 
+{
+    GLFWwindow* window = GetDeviceManager()->GetWindow();
+    
+    // Prioritize commandline options and ignore restoring window state
+    if (m_args.resolutionSetByCmdLine || m_args.startMaximized)
+        return;
+
+    if (all(state.windowSize > 0))
+    {
+        glfwSetWindowSize(window, state.windowSize.x, state.windowSize.y);
+    }
+    
+    if (state.isMaximized)
+    {
+        glfwMaximizeWindow(window);
+    }
+    else if (state.isFullscreen)
+    {
+        GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+        glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+    }
 }

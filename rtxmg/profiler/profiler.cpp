@@ -28,8 +28,6 @@
 
 // clang-format off
 
-#include <imgui.h>
-#include <imgui_internal.h>
 
 #include "rtxmg/profiler/profiler.h"
 #include "rtxmg/profiler/stopwatch.h"

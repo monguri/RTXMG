@@ -101,6 +101,7 @@ struct Args : SceneArgs
 
     int width = 1920;
     int height = 1080;
+    bool resolutionSetByCmdLine = false;
 
     std::string outfile;
     std::string meshInputFile = std::string{};

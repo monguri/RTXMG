@@ -74,7 +74,7 @@ static ImVec4 heatmapColor( float value )
 
 void ProfilerGUI::BuildControllerUI( ImFont* iconicFont, ImPlotContext *plotContext )
 {
-    ImGui::SetNextWindowPos(controllerWindow.pos, controllerWindow.cond, controllerWindow.pivot);
+    ImGui::SetNextWindowPos(controllerWindow.pos, ImGuiCond_Always, controllerWindow.pivot);
     ImGui::SetNextWindowSize(controllerWindow.size);
     ImGui::SetNextWindowBgAlpha(.65f);
 

@@ -31,7 +31,8 @@
 #pragma once
 
 #include "rtxmg/profiler/profiler.h"
-#include <imgui.h>
+#include <imgui_internal.h>
+#include "donut/core/math/math.h"
 
 struct ImPlotContext;
 class UserInterface;
@@ -54,19 +55,17 @@ class ProfilerGUI
     struct ControllerWindow
     {
         ImVec2    pos = ImVec2(0, 0);
-        ImGuiCond cond = ImGuiCond(0);
         ImVec2    pivot = ImVec2(0, 0);
         ImVec2    size = ImVec2(115, 0);
     } controllerWindow;
 
-    struct ProfilingWindow
+    struct ProfilerWindow
     {
         ImVec2    pos = ImVec2(0, 0);
-        ImGuiCond cond = ImGuiCond_FirstUseEver;
         ImVec2    pivot = ImVec2(1, 0);
-        ImVec2    size = ImVec2(800, 250);
-        bool      resetLayout = false;
-    } profilingWindow;
+        ImVec2    size = ImVec2(0, 0);
+        ImVec2    screenLayoutSize = ImVec2(0, 0);
+    } profilerWindow;
 
     bool displayGraphWindow = true;
 
@@ -80,6 +79,50 @@ class ProfilerGUI
     void BuildFrequencySelectorUI();
 };
 
+inline ImVec2 MakeImVec2(const dm::float2& v)
+{
+    return ImVec2{ v.x, v.y };
+}
+
+inline ImVec2 MakeImVec2(const dm::int2& v)
+{
+    return ImVec2{ float(v.x), float(v.y) };
+}
+
+inline dm::float2 MakeFloat2(const ImVec2& v)
+{
+    return dm::float2{ v.x, v.y };
+}
+
+inline void SetConstrainedWindowPos(const char *windowName, ImVec2 windowPos, const ImVec2& windowPivot, const ImVec2& screenSize)
+{
+    ImGuiCond cond = ImGuiCond_FirstUseEver;    
+    ImGuiWindow* window = ImGui::FindWindowByName(windowName);
+
+    // Bound the window position to be on screen by a margin
+    const float kMinOnscreenLength = 20.0f;
+    if (window)
+    {
+        const dm::float2 kMinOnscreenSize = { kMinOnscreenLength, kMinOnscreenLength };
+        dm::float2 currentWindowPos = MakeFloat2(window->Pos);
+        dm::float2 currentWindowSize = MakeFloat2(window->Size);
+        dm::box2 windowRect{ currentWindowPos, currentWindowPos + currentWindowSize };
+        dm::box2 screenLayoutRect{ kMinOnscreenSize, MakeFloat2(screenSize) - kMinOnscreenSize };
+        
+        if (!screenLayoutRect.intersects(windowRect))
+        {
+            cond = ImGuiCond_Always;
+            dm::float2 minCornerAdjustment = -min(windowRect.m_maxs - screenLayoutRect.m_mins, dm::float2::zero());
+            dm::float2 maxCornerAdjustment = -max(windowRect.m_mins - screenLayoutRect.m_maxs, dm::float2::zero());
+            dm::float2 adjustment = minCornerAdjustment + maxCornerAdjustment;
+            windowRect = windowRect.translate(adjustment);
+
+            windowPos = MakeImVec2(windowRect.m_mins + MakeFloat2(windowPivot) * currentWindowSize);
+        }
+    }
+    ImGui::SetNextWindowPos(windowPos, cond, windowPivot);
+}
+
 template <typename... SamplerGroup>
 inline void ProfilerGUI::BuildUI( ImFont *iconicFont, ImPlotContext *context, SamplerGroup&... groups )
 {
@@ -87,21 +130,19 @@ inline void ProfilerGUI::BuildUI( ImFont *iconicFont, ImPlotContext *context, Sa
 
     if (displayGraphWindow)
     {
+        const char* kWindowName = "Profiler";
+        SetConstrainedWindowPos(kWindowName, profilerWindow.pos, profilerWindow.pivot, profilerWindow.screenLayoutSize);
+        ImGui::SetNextWindowSize(profilerWindow.size, ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver); // Collapse the window by default
-        if (profilingWindow.resetLayout)
-        {
-            ImGui::SetNextWindowPos(profilingWindow.pos, profilingWindow.cond, profilingWindow.pivot);
-            ImGui::SetNextWindowSize(profilingWindow.size, profilingWindow.cond);
-        }
         ImGui::SetNextWindowBgAlpha(.65f);
 
-        if (ImGui::Begin("Profiler", &displayGraphWindow, ImGuiWindowFlags_None))
+        if (ImGui::Begin(kWindowName, &displayGraphWindow, ImGuiWindowFlags_None))
         {
             BuildFrequencySelectorUI();
 
             if (ImGui::BeginTabBar("MyTabBar", ImGuiTabBarFlags_Reorderable))
             {
-                ImVec2 tabSize = profilingWindow.size;
+                ImVec2 tabSize = profilerWindow.size;
                 (
                     [&] {
                         if( ImGui::BeginTabItem( groups.name.c_str() ) )

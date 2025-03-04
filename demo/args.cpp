@@ -197,6 +197,7 @@ void Args::Parse(int argc, char const* const* argv)
                     width = atoi(argv[++i]);
                     height = atoi(argv[++i]);
                 });
+            resolutionSetByCmdLine = true;
         }
         else if (arg == "--wireframe" || arg == "-wf")
         {

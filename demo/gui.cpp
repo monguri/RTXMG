@@ -118,14 +118,16 @@ void UserInterface::SetupIniHandler()
 
     static struct Settings
     {
-        bool audio_muted = false;
+        bool audioMuted = false;
 
-        bool json_assets_filter = false;
-        bool obj_assets_filter = false;
+        bool jsonAssetsFilter = false;
+        bool objAssetsFilter = false;
 
-        bool display_stats = false;
+        bool displayStats = false;
 
         bool wantApply = false;
+
+        RTXMGDemoApp::WindowState windowState = {};
     } settings;
 
     ImGuiSettingsHandler ini_handler;
@@ -146,13 +148,13 @@ void UserInterface::SetupIniHandler()
             auto* gui = reinterpret_cast<UserInterface*>(handler->UserData);
             auto* app = &gui->m_app;
 
-            gui->GetProfilerGUI().displayGraphWindow = settings.display_stats;
+            gui->GetProfilerGUI().displayGraphWindow = settings.displayStats;
 
-            gui->MuteAudio(settings.audio_muted);
+            gui->MuteAudio(settings.audioMuted);
 
             UIData& ui = app->GetUIData();
-            ui.includeJsonAssets = settings.json_assets_filter;
-            ui.includeObjAssets = settings.obj_assets_filter;
+            ui.includeJsonAssets = settings.jsonAssetsFilter;
+            ui.includeObjAssets = settings.objAssetsFilter;
 
             const fs::path& mediaPath = app->GetMediaPath();
             if (!mediaPath.empty())
@@ -163,6 +165,8 @@ void UserInterface::SetupIniHandler()
                 ui.mediaAssets = FindMediaAssets(mediaPath, folder_filters.data(), format_filters.data());
             }
 
+            app->SetWindowState(settings.windowState);
+
             settings.wantApply = false;
         }
     };
@@ -170,20 +174,36 @@ void UserInterface::SetupIniHandler()
 
     ini_handler.ReadLineFn = [](ImGuiContext*, ImGuiSettingsHandler* handler, void* entry, const char* line) {
 
-        int audio_muted = 0;
-        if (std::sscanf(line, "AudioMuted=%d", &audio_muted) == 1)
-            settings.audio_muted = audio_muted;
+        int audioMuted = 0;
+        if (std::sscanf(line, "AudioMuted=%d", &audioMuted) == 1)
+            settings.audioMuted = audioMuted;
 
         uint32_t json = 0, obj = 0;
         if (std::sscanf(line, "FormatFilters={ json=%d, obj=%d }", &json, &obj) == 2)
         {
-            settings.json_assets_filter = (bool)json;
-            settings.obj_assets_filter = (bool)obj;
+            settings.jsonAssetsFilter = (bool)json;
+            settings.objAssetsFilter = (bool)obj;
         }
 
-        int display_stats = false;
-        if (std::sscanf(line, "DisplayStatistics=%d", &display_stats) == 1)
-            settings.display_stats = display_stats != 0;
+        int displayStats = false;
+        if (std::sscanf(line, "DisplayStatistics=%d", &displayStats) == 1)
+            settings.displayStats = displayStats != 0;
+
+        donut::math::int2 windowSize{};
+        if (std::sscanf(line, "WindowSize=%d,%d", &windowSize.x, &windowSize.y) == 2)
+        {
+            settings.windowState.windowSize = windowSize;
+        }
+        int windowIsMaximized = false;
+        if (std::sscanf(line, "WindowIsMaximized=%d", &windowIsMaximized) == 1)
+        {
+            settings.windowState.isMaximized = windowIsMaximized != 0;
+        }
+        int windowIsFullscreen = false;
+        if (std::sscanf(line, "WindowIsFullscreen=%d", &windowIsFullscreen) == 1)
+        {
+            settings.windowState.isFullscreen = windowIsFullscreen != 0;
+        }
     };
 
     ini_handler.WriteAllFn = [](ImGuiContext* ctx, ImGuiSettingsHandler* handler, ImGuiTextBuffer* buf) {
@@ -193,16 +213,22 @@ void UserInterface::SetupIniHandler()
         
         UIData& ui = app->GetUIData();
         
-        settings.audio_muted = ui.audioMuted;
-        settings.json_assets_filter = ui.includeJsonAssets;
-        settings.obj_assets_filter = ui.includeObjAssets;
-        settings.display_stats = gui->GetProfilerGUI().displayGraphWindow;
-
+        settings.audioMuted = ui.audioMuted;
+        settings.jsonAssetsFilter = ui.includeJsonAssets;
+        settings.objAssetsFilter = ui.includeObjAssets;
+        settings.displayStats = gui->GetProfilerGUI().displayGraphWindow;
+        
+        settings.windowState = app->GetWindowState();
+        
         buf->reserve(buf->size() + 2);  // ballpark reserve
         buf->appendf("[%s][%s]\n", handler->TypeName, "Settings");
-        buf->appendf("AudioMuted=%d\n", settings.audio_muted);
-        buf->appendf("FormatFilters={ json=%d, obj=%d }\n", settings.json_assets_filter, settings.obj_assets_filter);
-        buf->appendf("DisplayStatistics=%d\n", settings.display_stats);
+        buf->appendf("AudioMuted=%d\n", settings.audioMuted);
+        buf->appendf("FormatFilters={ json=%d, obj=%d }\n", settings.jsonAssetsFilter, settings.objAssetsFilter);
+        buf->appendf("DisplayStatistics=%d\n", settings.displayStats);
+        buf->appendf("WindowSize=%d,%d\n", settings.windowState.windowSize.x, settings.windowState.windowSize.y);
+        buf->appendf("WindowIsMaximized=%d\n", settings.windowState.isMaximized);
+        buf->appendf("WindowIsFullscreen=%d\n", settings.windowState.isFullscreen);
+
         buf->append("\n");
     };
 
@@ -213,7 +239,6 @@ void UserInterface::BackBufferResized(const uint32_t width,
     const uint32_t height,
     const uint32_t sampleCount)
 {
-    m_resetLayout = true;
 }
 
 void UserInterface::buildUI()
@@ -233,7 +258,6 @@ void UserInterface::buildUI()
 
     BuildUIMain({ width, height });
 
-    m_resetLayout = false;
 }
 
 template<typename E, size_t N>
@@ -263,12 +287,10 @@ static int ImGuiComboFromArray(const char* name, E* selected, const std::array<c
     return valueChanged;
 }
 
-void UserInterface::BuildUIMain(int2 windowSize)
+void UserInterface::BuildUIMain(int2 screenLayoutSize)
 {
     UIData& uiData = GetApp().GetUIData();
 
-    int width = windowSize.x;
-    int height = windowSize.y;
     auto& renderer = m_app.GetRenderer();
 
     KORGI_BUTTON_CALLBACK(0, Play, [this]()
@@ -329,14 +351,12 @@ void UserInterface::BuildUIMain(int2 windowSize)
     });
 
     ImVec2 itemSize = ImGui::GetItemRectSize();
-    if (m_resetLayout)
-    {
-        ImGui::SetNextWindowPos(ImVec2(10, 10));
-        ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
-    }
 
-    ImGui::SetNextWindowSizeConstraints(ImVec2(100.f, 200.f), ImVec2(float(windowSize.x), windowSize.y - 70.0f));
-    ImGui::Begin("Settings", nullptr, ImGuiWindowFlags_None);
+    const char* kWindowName = "Settings";
+    SetConstrainedWindowPos(kWindowName, ImVec2(10, 10), ImVec2(0.0f, 0.0f), MakeImVec2(screenLayoutSize));
+    ImGui::SetNextWindowSize(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(100.f, 200.f), ImVec2(float(screenLayoutSize.x), screenLayoutSize.y - 70.0f));
+    ImGui::Begin(kWindowName, nullptr, ImGuiWindowFlags_None);
 
     ImGui::PushItemWidth(kItemWidth);
 
@@ -988,17 +1008,16 @@ void UserInterface::BuildUIMain(int2 windowSize)
     m_profiler.allocatedClusters = stats::clusterAccelSamplers.numClusters.max;
 
     m_profiler.controllerWindow = {
-        .pos = ImVec2(float(width) - 10.f, float(height) - 10.f),
+        .pos = ImVec2(float(screenLayoutSize.x) - 10.f, float(screenLayoutSize.y) - 10.f),
         .pivot = ImVec2(1.f, 1.f),
         .size = ImVec2(115, 0)
     };
 
-    m_profiler.profilingWindow = {
-        .pos = ImVec2(float(width) - 10.f, 10.f),
-        .cond = ImGuiCond_FirstUseEver,
+    m_profiler.profilerWindow = {
+        .pos = ImVec2(float(screenLayoutSize.x) - 10.f, 10.f),
         .pivot = ImVec2(1.f, 0.f),
         .size = ImVec2(800.f, 450.f),
-        .resetLayout = m_resetLayout,
+        .screenLayoutSize = ImVec2(float(screenLayoutSize.x), float(screenLayoutSize.y))
     };
 
     m_profiler.BuildUI<stats::FrameSamplers, stats::ClusterAccelSamplers, stats::EvaluatorSamplers, stats::MemUsageSamplers>(m_iconicFont, m_implot,
@@ -1010,14 +1029,14 @@ void UserInterface::BuildUIMain(int2 windowSize)
     }
 
     float profilerWidth = m_profiler.controllerWindow.size.x;
-    float timelineWidth = float(width) - 30.f - profilerWidth;
+    float timelineWidth = float(screenLayoutSize.x) - 30.f - profilerWidth;
 
-    BuildUITimeline(windowSize, timelineWidth);
+    BuildUITimeline(screenLayoutSize, timelineWidth);
 
-    BuildMemoryWarning(windowSize);
+    BuildMemoryWarning(screenLayoutSize);
 }
 
-void UserInterface::BuildMemoryWarning(int2 windowSize)
+void UserInterface::BuildMemoryWarning(int2 screenLayoutSize)
 {
     auto& stats = GetApp().m_BuildStats;
     bool clusterCountExceeded = stats.desired.m_numClusters > stats.allocated.m_numClusters;
@@ -1027,7 +1046,7 @@ void UserInterface::BuildMemoryWarning(int2 windowSize)
     if (!clusterCountExceeded && !clasMemoryExceeded && !vertexMemoryExceeded)
         return;
 
-    ImVec2 overlayPos(windowSize.x * 0.5f, 10.0f); // Center X, 10px from the top
+    ImVec2 overlayPos(screenLayoutSize.x * 0.5f, 10.0f); // Center X, 10px from the top
     ImVec2 overlayPivot(0.5f, 0.0f); // Center horizontally, stick to the top
 
     ImGui::SetNextWindowPos(overlayPos, ImGuiCond_Always, overlayPivot);
@@ -1078,18 +1097,15 @@ void UserInterface::BuildMemoryWarning(int2 windowSize)
     ImGui::PopStyleColor(2);  // Restore previous colors
 }
 
-void UserInterface::BuildUITimeline(int2 windowSize, float timelineWidth)
+void UserInterface::BuildUITimeline(int2 screenLayoutSize, float timelineWidth)
 {
-    int width = windowSize.x;
-    int height = windowSize.y;
-
     auto& state = GetApp().GetUIData().timeLineEditorState;
 
     if (state.frameRate == 0.0f || (state.frameRange.y - state.frameRange.x) == 0)
         return;
 
     float tw = timelineWidth;
-    ImGui::SetNextWindowPos(ImVec2(tw + 10.f, float(height) - 10.f), 0,
+    ImGui::SetNextWindowPos(ImVec2(tw + 10.f, float(screenLayoutSize.y) - 10.f), 0,
         ImVec2(1.f, 1.f));
     ImGui::SetNextWindowSize(ImVec2(tw, 0.f));
     ImGui::SetNextWindowBgAlpha(.65f);

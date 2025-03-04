@@ -52,6 +52,14 @@ class UserInterface;
 
 class RTXMGDemoApp : public donut::app::ApplicationBase
 {
+public:
+    struct WindowState
+    {
+        donut::math::int2 windowSize = { 0,0 };
+        bool isMaximized = false;
+        bool isFullscreen = false;
+    };
+
 private:
     std::shared_ptr<RTXMGScene> m_scene;
     Camera m_camera;
@@ -112,6 +120,7 @@ private:
     const char** m_argv;
 
     UserInterface* m_gui;
+    WindowState m_windowState;
 
     struct MessageCallback : public nvrhi::IMessageCallback
     {
@@ -176,6 +185,9 @@ public:
     const std::filesystem::path& GetMediaPath() const { return m_mediaPath; }
     void SetMediaPath(const std::filesystem::path& path) { m_mediaPath = path; }
     UIData& GetUIData() { return m_ui; }
+
+    WindowState GetWindowState() const { return m_windowState; }
+    void SetWindowState(const WindowState& state);
 
     void DumpFineTess();
     void SaveScreenshot();
