@@ -41,7 +41,6 @@
 #include "zrenderer.h"
 #include "trackball.h"
 
-using namespace donut;
 using namespace donut::math;
 
 #include "render_params.h"
@@ -51,7 +50,7 @@ using namespace donut::math;
 
 class UserInterface;
 
-class RTXMGDemoApp : public app::ApplicationBase
+class RTXMGDemoApp : public donut::app::ApplicationBase
 {
 private:
     std::shared_ptr<RTXMGScene> m_scene;
@@ -61,7 +60,7 @@ private:
     Camera m_tesselationCamera;
     Trackball m_trackBall;
     
-    std::shared_ptr<engine::DirectionalLight> m_sunLight;
+    std::shared_ptr<donut::engine::DirectionalLight> m_sunLight;
     nvrhi::CommandListHandle m_commandList;
 
     // path to executable (because argv0 is not reliable)
@@ -116,10 +115,10 @@ private:
 
     struct MessageCallback : public nvrhi::IMessageCallback
     {
-        explicit MessageCallback(app::DeviceManager* deviceManager)
+        explicit MessageCallback(donut::app::DeviceManager* deviceManager)
             : m_deviceManager(deviceManager)
         {}
-        const app::DeviceManager* m_deviceManager;
+        const donut::app::DeviceManager* m_deviceManager;
         void message(nvrhi::MessageSeverity severity, const char* messageText) override;
     };
     MessageCallback m_messageCallback;
@@ -139,7 +138,7 @@ private:
 
 public:
     // AppBase Overrides
-    bool LoadScene(std::shared_ptr<vfs::IFileSystem> fs,
+    bool LoadScene(std::shared_ptr<donut::vfs::IFileSystem> fs,
         const std::filesystem::path& sceneFileName) override;
 
     bool KeyboardUpdate(int key, int scancode, int action, int mods) override;
@@ -154,7 +153,7 @@ public:
     void Render(nvrhi::IFramebuffer* framebuffer) override;
 
 public:
-    RTXMGDemoApp(app::DeviceManager* deviceManager, int argc,
+    RTXMGDemoApp(donut::app::DeviceManager* deviceManager, int argc,
         const char** argv);
     virtual ~RTXMGDemoApp();
 

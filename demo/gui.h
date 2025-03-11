@@ -35,7 +35,6 @@
 
 #include "rtxmg/profiler/gui.h"
 
-using namespace donut;
 using namespace donut::math;
 
 namespace fs = std::filesystem;
@@ -203,7 +202,7 @@ struct UIData
 
     TimeLineEditorState timeLineEditorState;
 
-    std::shared_ptr<engine::LoadedTexture> envmap = nullptr;
+    std::shared_ptr<donut::engine::LoadedTexture> envmap = nullptr;
     std::string envmapFilepath = "";
 
     // DLSS
@@ -217,7 +216,7 @@ struct UIData
 #endif
 };
 
-class UserInterface : public app::ImGui_Renderer
+class UserInterface : public donut::app::ImGui_Renderer
 {
 public:
     UserInterface(RTXMGDemoApp& app);
@@ -238,7 +237,7 @@ public:
 
     ProfilerGUI& GetProfilerGUI() { return m_profiler; }
 
-    bool CustomInit(std::shared_ptr<engine::ShaderFactory> shaderFactory);
+    bool CustomInit(std::shared_ptr<donut::engine::ShaderFactory> shaderFactory);
 
 private:
     void BuildMemoryWarning(int2 windowSize);

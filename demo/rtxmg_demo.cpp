@@ -36,10 +36,10 @@ extern "C" {
     _declspec(dllexport) DWORD NvOptimusEnablement = 0x0000001;
 }
 
-using namespace donut;
-
 #include "rtxmg_demo_app.h"
 #include "gui.h"
+
+using namespace donut;
 
 const char* UIData::WindowTitle = "RTX Mega Geometry";
 

@@ -44,21 +44,20 @@
 #include "rtxmg/subdivision/topology_cache.h"
 #include "rtxmg/utils/buffer.h"
 
-using namespace donut::vfs;
-using namespace donut::engine;
+using namespace donut;
 
 namespace fs = std::filesystem;
 
 RTXMGScene::RTXMGScene(nvrhi::IDevice* device,
     const fs::path& mediapath,
-    std::shared_ptr<donut::engine::CommonRenderPasses> commonPasses,
+    std::shared_ptr<CommonRenderPasses> commonPasses,
     ShaderFactory& shaderFactory,
     std::shared_ptr<vfs::IFileSystem> fs,
     std::shared_ptr<TextureCache> textureCache,
     std::shared_ptr<DescriptorTableManager> descriptorTable,
     std::shared_ptr<SceneTypeFactory> sceneTypeFactory,
     int2 initialFrameRange, int isoLevelSharp, int isoLevelSmooth)
-    : donut::engine::Scene(device, shaderFactory, fs, textureCache,
+    : Scene(device, shaderFactory, fs, textureCache,
         descriptorTable, sceneTypeFactory),
     m_commonPasses(commonPasses),
     m_mediaPath(mediapath),
@@ -372,7 +371,7 @@ bool RTXMGScene::LoadWithExecutor(const std::filesystem::path& filename,
     root->SetName(sceneName);
     m_Models.emplace_back(SceneImportResult{ root });
 
-    m_SceneGraph = std::make_shared<engine::SceneGraph>();
+    m_SceneGraph = std::make_shared<SceneGraph>();
     m_SceneGraph->SetRootNode(m_Models.front().rootNode);
 
     
@@ -392,7 +391,7 @@ bool RTXMGScene::LoadWithExecutor(const std::filesystem::path& filename,
         meshInfo->totalIndices = 0;
         meshInfo->totalVertices = 0;
 
-        auto addTexture = [&sanitizedFilePath, this](const fs::path& shapePath, const std::string& mtlLib, const std::string& texPath, bool* enable) -> std::shared_ptr<donut::engine::LoadedTexture>
+        auto addTexture = [&sanitizedFilePath, this](const fs::path& shapePath, const std::string& mtlLib, const std::string& texPath, bool* enable) -> std::shared_ptr<LoadedTexture>
             {
                 *enable = false;
                 if (texPath.empty())

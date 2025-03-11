@@ -38,7 +38,6 @@ class MaterialCache;
 
 using namespace donut::engine;
 using namespace donut::math;
-using namespace donut;
 
 struct View
 {
@@ -76,9 +75,9 @@ public:
 
     RTXMGScene(nvrhi::IDevice* device,
         const fs::path& mediapath,
-        std::shared_ptr<donut::engine::CommonRenderPasses> commonPasses,
+        std::shared_ptr<CommonRenderPasses> commonPasses,
         ShaderFactory& shaderFactory,
-        std::shared_ptr<vfs::IFileSystem> fs,
+        std::shared_ptr<donut::vfs::IFileSystem> fs,
         std::shared_ptr<TextureCache> textureCache,
         std::shared_ptr<DescriptorTableManager> descriptorTable,
         std::shared_ptr<SceneTypeFactory> sceneTypeFactory,

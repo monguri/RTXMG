@@ -50,8 +50,7 @@
 #include "rtxmg/scene/camera.h"
 #include "rtxmg/utils/buffer.h"
 
-
-using namespace donut;
+using namespace donut::engine;
 using namespace donut::math;
 
 typedef vector<unsigned short, 2> uint16_t2;
@@ -130,7 +129,7 @@ public:
     void BuildOrUpdatePipelines();
 
     void Launch(nvrhi::ICommandList* commandList, uint32_t frameIndex,
-        std::shared_ptr<engine::Light> light);
+        std::shared_ptr<Light> light);
     void BlitFramebuffer(nvrhi::ICommandList* commandList, nvrhi::IFramebuffer* framebuffer);
     void DlssUpscale(nvrhi::ICommandList* commandList, uint32_t frameIndex);
 
@@ -332,22 +331,22 @@ public:
 
     void SceneFinishedLoading(std::shared_ptr<RTXMGScene> scene);
 
-    std::shared_ptr<engine::TextureCache> GetTextureCache() const
+    std::shared_ptr<TextureCache> GetTextureCache() const
     {
         return m_textureCache;
     }
 
-    std::shared_ptr<engine::DescriptorTableManager> GetDescriptorTable() const
+    std::shared_ptr<DescriptorTableManager> GetDescriptorTable() const
     {
         return m_descriptorTable;
     }
 
-    std::shared_ptr<engine::ShaderFactory> GetShaderFactory() const
+    std::shared_ptr<ShaderFactory> GetShaderFactory() const
     {
         return m_shaderFactory;
     }
 
-    std::shared_ptr<engine::CommonRenderPasses> GetCommonPasses() const
+    std::shared_ptr<CommonRenderPasses> GetCommonPasses() const
     {
         return m_commonPasses;
     }
@@ -363,7 +362,7 @@ public:
     std::unique_ptr<ClusterAccelBuilder>& GetAccelBuilder() { return m_clusterAccelBuilder; }
 
     void SetEnvMap(const std::string& filePath, nvrhi::ICommandList* commandList);
-    std::shared_ptr<donut::engine::LoadedTexture> GetEnvMap() const { return m_envMap; }
+    std::shared_ptr<LoadedTexture> GetEnvMap() const { return m_envMap; }
     void ClearEnvMap() { m_envMap = nullptr; }
 private:
 
@@ -371,7 +370,7 @@ private:
 
     nvrhi::IDevice* GetDevice() const { return m_options.device; }
 
-    bool CreateRayTracingPipeline(engine::ShaderFactory& shaderFactory);
+    bool CreateRayTracingPipeline(ShaderFactory& shaderFactory);
 
     void FillInstanceDescs(nvrhi::ICommandList* commandList, nvrhi::IBuffer* outInstanceDescs, nvrhi::IBuffer* blasAddresses, uint32_t numInstances);
 
@@ -393,7 +392,7 @@ private:
 
     PreprocessEnvMapShaders m_preprocessEnvMapShaders;
     PreprocessEnvMapResources m_preprocessEnvMapResources;
-    std::shared_ptr<donut::engine::LoadedTexture> m_envMap;
+    std::shared_ptr<LoadedTexture> m_envMap;
     ScanSystem m_scanSystem;
     float m_environmentMapAzimuth = 0.f;
     float m_environmentMapElevation = 0.f;
@@ -428,7 +427,7 @@ private:
     nvrhi::BufferHandle m_lightingConstantsBuffer;
     nvrhi::BufferHandle m_renderParamsBuffer;
 
-    std::shared_ptr<engine::DescriptorTableManager> m_descriptorTable;
+    std::shared_ptr<DescriptorTableManager> m_descriptorTable;
 
     // Render Textures (RenderSize)
     std::array<nvrhi::TextureHandle, size_t(OutputTexture::Count)> m_outputTextures;
@@ -456,17 +455,17 @@ private:
 #endif
     nvrhi::BufferHandle m_timeViewBuffer;
 
-    std::unique_ptr<engine::BindingCache> m_bindingCache;
-    std::shared_ptr<engine::TextureCache> m_textureCache;
+    std::unique_ptr<BindingCache> m_bindingCache;
+    std::shared_ptr<TextureCache> m_textureCache;
     std::shared_ptr<RTXMGScene> m_scene;
 
     nvrhi::ShaderLibraryHandle m_shaderLibrary;
 
-    std::shared_ptr<engine::ShaderFactory> m_shaderFactory;
-    std::shared_ptr<engine::CommonRenderPasses> m_commonPasses;
+    std::shared_ptr<ShaderFactory> m_shaderFactory;
+    std::shared_ptr<CommonRenderPasses> m_commonPasses;
 
-    engine::PlanarView m_view;
-    engine::PlanarView m_viewPrevious;
+    PlanarView m_view;
+    PlanarView m_viewPrevious;
 
     bool m_pipelinesNeedsUpdate = true;
     bool m_needsRebind = true;

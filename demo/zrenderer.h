@@ -41,8 +41,7 @@
 
 #include "rtxmg/utils/buffer.h"
 
-
-using namespace donut;
+using namespace donut::engine;
 using namespace donut::math;
 
 class Camera;
@@ -51,8 +50,8 @@ class ZRenderer
 {
 public:
 
-    ZRenderer(std::shared_ptr<donut::engine::ShaderFactory> shaderFactory,
-        std::shared_ptr<donut::engine::DescriptorTableManager> descriptorTable);
+    ZRenderer(std::shared_ptr<ShaderFactory> shaderFactory,
+        std::shared_ptr<DescriptorTableManager> descriptorTable);
     ~ZRenderer();
 
     void Render(Camera& camera, nvrhi::rt::AccelStructHandle tlas,
@@ -61,7 +60,7 @@ public:
 private:
     void BuildPipeline(nvrhi::IDevice* device);
 
-    std::shared_ptr<engine::ShaderFactory> GetShaderFactory() const
+    std::shared_ptr<ShaderFactory> GetShaderFactory() const
     {
         return m_shaderFactory;
     }
@@ -76,6 +75,6 @@ private:
 
     nvrhi::ShaderLibraryHandle m_shaderLibrary;
 
-    std::shared_ptr<engine::ShaderFactory> m_shaderFactory;
-    std::shared_ptr<engine::DescriptorTableManager> m_descriptorTable;
+    std::shared_ptr<ShaderFactory> m_shaderFactory;
+    std::shared_ptr<DescriptorTableManager> m_descriptorTable;
 };
