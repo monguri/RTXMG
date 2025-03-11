@@ -31,7 +31,10 @@ std::unique_ptr<Voice> Voice::create(Engine& engine, std::filesystem::path const
     return nullptr;
 }
 
-std::unique_ptr<Voice> Voice::create(Engine& engine, std::shared_ptr<WaveFile const> wave, bool loop) {
+std::unique_ptr<Voice> Voice::create(Engine& engine, std::shared_ptr<WaveFile const> wave, bool loop) 
+{
+    if (!engine._xaudio2)
+        return nullptr;
 
     WaveFile::Fmt const& fmt = wave->getFormat();
 
