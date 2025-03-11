@@ -280,8 +280,8 @@ RTXMGRenderer& RTXMGDemoApp::GetRenderer()
     return *m_renderer;
 }
 
-static constexpr size_t const minVram = 10;
-static constexpr size_t const gigabyte = 1024 * 1024 * 1024;
+static constexpr size_t const kMinVram = 10;
+static constexpr size_t const kGigabyte = 1024 * 1024 * 1024;
 
 bool RTXMGDemoApp::Init()
 {
@@ -303,9 +303,12 @@ bool RTXMGDemoApp::Init()
         if (!memcmp(&adapter.luid, &rawLuid, sizeof(LUID)))
         {
             size_t vram = adapter.dedicatedVideoMemory;
-            if (vram < minVram * gigabyte)
+            if (vram < kMinVram * kGigabyte)
             {
-                donut::log::fatal("Not enough VRAM to run the demo. Requires at least %d GB", minVram);
+                donut::log::error("GPU has %.2fGB of VRAM and is below the required %dGB.\n\n"
+                    "Expect the following:\n"
+                    "1. Performance degradation or out of memory crashes.\n"
+                    "2. Flickering and missing surfaces after adjusting the memory budget down", float(vram) / kGigabyte, kMinVram);
             }
         }
     }
