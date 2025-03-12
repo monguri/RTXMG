@@ -318,6 +318,7 @@ void RTXMGRenderer::DlssUpscale(nvrhi::ICommandList *commandList, uint32_t frame
             m_outputTextures[uint32_t(OutputTexture::Normals)],
             m_outputTextures[uint32_t(OutputTexture::Roughness)],
             m_outputTextures[uint32_t(OutputTexture::SpecularHitT)],
+            nullptr,
             m_outputTextures[uint32_t(OutputTexture::DlssOutputColor)]);
 
         streamline.EvaluateDLSSRR(commandList);
