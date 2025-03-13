@@ -203,6 +203,7 @@ RTXMGDemoApp::RTXMGDemoApp(app::DeviceManager* deviceManager,
     deviceParams.backBufferWidth = m_displaySize.x;
     deviceParams.backBufferHeight = m_displaySize.y;
     deviceParams.enablePerMonitorDPI = true;
+    deviceParams.allowModeSwitch = false; // Make Alt+Enter not switch monitor resolutions
     deviceParams.startMaximized = m_args.startMaximized;
     deviceParams.swapChainFormat = nvrhi::Format::RGBA8_UNORM;
     deviceParams.messageCallback = &m_messageCallback;
