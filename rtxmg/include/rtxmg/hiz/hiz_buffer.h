@@ -63,7 +63,7 @@ public:
 
     // composites the hi-z mip levels over an arbitrary rgba texture
     // (starting from a small offset at the bottom left corner)
-    void Display(nvrhi::ITexture* output, nvrhi::ICommandList* commandList) const;
+    void Display(nvrhi::ITexture* output, nvrhi::ICommandList* commandList);
     
     nvrhi::BindingSetDesc GetDesc(bool writeable = false) const;
 
@@ -83,6 +83,9 @@ private:
     nvrhi::BindingLayoutHandle m_passBL;
     nvrhi::ComputePipelineHandle m_pass1PSO;
     nvrhi::ComputePipelineHandle m_pass2PSO;
+
+    nvrhi::BindingLayoutHandle m_displayBL;
+    nvrhi::ComputePipelineHandle m_displayPSO;
 
     nvrhi::SamplerHandle m_sampler;
 

@@ -49,6 +49,12 @@ class ZBuffer
     nvrhi::ShaderHandle m_minmaxShader;
     nvrhi::ShaderHandle m_displayShader;
 
+    nvrhi::BindingLayoutHandle m_minmaxBL;
+    nvrhi::ComputePipelineHandle m_minmaxPSO;
+
+    nvrhi::BindingLayoutHandle m_displayBL;
+    nvrhi::ComputePipelineHandle m_displayPSO;
+
     std::unique_ptr<HiZBuffer> m_hierarchy;
     std::shared_ptr<donut::engine::CommonRenderPasses> m_commonPasses;
 

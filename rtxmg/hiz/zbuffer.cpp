@@ -97,20 +97,22 @@ void ZBuffer::Display(nvrhi::ITexture* output, nvrhi::ICommandList* commandList)
         .addItem(nvrhi::BindingSetItem::Texture_SRV(0, m_currentTexture));
 
     nvrhi::BindingSetHandle bindingSet;
-    nvrhi::BindingLayoutHandle bindingLayout;
-    if (!nvrhi::utils::CreateBindingSetAndLayout(device, nvrhi::ShaderType::Compute, 0, bindingSetDesc, bindingLayout, bindingSet))
+    if (!nvrhi::utils::CreateBindingSetAndLayout(device, nvrhi::ShaderType::Compute, 0, bindingSetDesc, m_minmaxBL, bindingSet))
     {
         log::fatal("Failed to create binding set and layout for zbuffer minmax");
     }
+    
+    if (!m_minmaxPSO)
+    {
+        auto computePipelineDesc = nvrhi::ComputePipelineDesc()
+            .setComputeShader(m_minmaxShader)
+            .addBindingLayout(m_minmaxBL);
 
-    nvrhi::ComputePipelineDesc computePipelineDesc = nvrhi::ComputePipelineDesc()
-        .setComputeShader(m_minmaxShader)
-        .addBindingLayout(bindingLayout);
-
-    auto computePipeline = device->createComputePipeline(computePipelineDesc);
+        m_minmaxPSO = device->createComputePipeline(computePipelineDesc);
+    }
 
     auto state = nvrhi::ComputeState()
-        .setPipeline(computePipeline)
+        .setPipeline(m_minmaxPSO)
         .addBindingSet(bindingSet);
 
     commandList->setComputeState(state);
@@ -122,21 +124,22 @@ void ZBuffer::Display(nvrhi::ITexture* output, nvrhi::ICommandList* commandList)
         .addItem(nvrhi::BindingSetItem::Texture_UAV(0, output));
 
     bindingSet.Reset();
-    bindingLayout.Reset();
-
-    if (!nvrhi::utils::CreateBindingSetAndLayout(device, nvrhi::ShaderType::Compute, 0, bindingSetDesc, bindingLayout, bindingSet))
+    if (!nvrhi::utils::CreateBindingSetAndLayout(device, nvrhi::ShaderType::Compute, 0, bindingSetDesc, m_displayBL, bindingSet))
     {
         log::fatal("Failed to create binding set and layout for zbuffer minmax");
     }
 
-    computePipelineDesc = nvrhi::ComputePipelineDesc()
-        .setComputeShader(m_displayShader)
-        .addBindingLayout(bindingLayout);
+    if (!m_displayPSO)
+    {
+        auto computePipelineDesc = nvrhi::ComputePipelineDesc()
+            .setComputeShader(m_displayShader)
+            .addBindingLayout(m_displayBL);
 
-    computePipeline = device->createComputePipeline(computePipelineDesc);
+        m_displayPSO = device->createComputePipeline(computePipelineDesc);
+    }
 
     state = nvrhi::ComputeState()
-        .setPipeline(computePipeline)
+        .setPipeline(m_displayPSO)
         .addBindingSet(bindingSet);
 
     commandList->setComputeState(state);

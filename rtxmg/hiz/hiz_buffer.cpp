@@ -128,7 +128,7 @@ std::unique_ptr<HiZBuffer> HiZBuffer::Create(uint2 size,
     return hiz;
 }
 
-void HiZBuffer::Display(nvrhi::ITexture* output, nvrhi::ICommandList* commandList) const
+void HiZBuffer::Display(nvrhi::ITexture* output, nvrhi::ICommandList* commandList)
 {
     nvrhi::utils::ScopedMarker marker(commandList, "HiZBuffer::display");
     static constexpr uint32_t spacing = 10u;
@@ -149,20 +149,22 @@ void HiZBuffer::Display(nvrhi::ITexture* output, nvrhi::ICommandList* commandLis
     commandList->writeBuffer(m_displayParamsBuffer, &params, sizeof(params));
 
     nvrhi::BindingSetHandle bindingSet;
-    nvrhi::BindingLayoutHandle bindingLayout;
-    if (!nvrhi::utils::CreateBindingSetAndLayout(device, nvrhi::ShaderType::Compute, 0, bindingSetDesc, bindingLayout, bindingSet))
+    if (!nvrhi::utils::CreateBindingSetAndLayout(device, nvrhi::ShaderType::Compute, 0, bindingSetDesc, m_displayBL, bindingSet))
     {
         log::fatal("Failed to create binding set and layout for hiz display");
     }
 
-    nvrhi::ComputePipelineDesc computePipelineDesc = nvrhi::ComputePipelineDesc()
-        .setComputeShader(m_displayShader)
-        .addBindingLayout(bindingLayout);
+    if (!m_displayPSO)
+    {
+        nvrhi::ComputePipelineDesc computePipelineDesc = nvrhi::ComputePipelineDesc()
+            .setComputeShader(m_displayShader)
+            .addBindingLayout(m_displayBL);
 
-    auto computePipeline = device->createComputePipeline(computePipelineDesc);
-
+        m_displayPSO = device->createComputePipeline(computePipelineDesc);
+    }
+    
     auto state = nvrhi::ComputeState()
-        .setPipeline(computePipeline)
+        .setPipeline(m_displayPSO)
         .addBindingSet(bindingSet);
 
     commandList->setComputeState(state);
