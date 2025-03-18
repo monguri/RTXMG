@@ -172,9 +172,6 @@ RTXMGRenderer::RTXMGRenderer(Options const& opts)
         sizeof(BlitParams), "BlitParams",
         engine::c_MaxRenderPassConstantBufferVersions));
 
-    m_preprocessEnvMapShaders.m_computeConditional = m_shaderFactory->CreateShader("envmap/compute_conditional.hlsl", "main", nullptr, nvrhi::ShaderType::Compute);
-    m_preprocessEnvMapShaders.m_computeMarginal = m_shaderFactory->CreateShader("envmap/compute_marginal.hlsl", "main", nullptr, nvrhi::ShaderType::Compute);
-
     m_preprocessEnvMapResources.m_params = GetDevice()->createBuffer(nvrhi::utils::CreateVolatileConstantBufferDesc(
         sizeof(PreprocessEnvMapParams), "PreprocessEnvMapParams", engine::c_MaxRenderPassConstantBufferVersions));
 
@@ -182,6 +179,33 @@ RTXMGRenderer::RTXMGRenderer(Options const& opts)
 }
 
 RTXMGRenderer::~RTXMGRenderer() {}
+
+void RTXMGRenderer::ReloadShaders()
+{
+    m_shaderFactory->ClearCache();
+
+    m_pipelinesNeedsUpdate = true;
+    m_needsRebind = true;
+    
+    m_clusterAccelBuilder = std::make_unique<ClusterAccelBuilder>(*m_shaderFactory, m_commonPasses, GetDescriptorTable()->GetDescriptorTable(), GetDevice());
+    m_sceneAccels = std::make_unique<ClusterAccels>();
+    m_zbuffer.reset();
+
+    m_scanSystem.Init(m_shaderFactory, GetDevice());
+    if (m_envMap)
+    {
+        m_needsEnvMapUpdate = true;
+    }
+
+    for (auto& pso : m_motionVectorsPSO)
+    {
+        pso.Reset();
+    }
+    m_blitPipeline.Reset();
+    m_preprocessEnvMapShaders.m_computeConditionalPSO.Reset();
+    m_preprocessEnvMapShaders.m_computeMarginalPSO.Reset();
+    m_fillInstanceDescsPSO.Reset();
+}
 
 void RTXMGRenderer::BuildOrUpdatePipelines()
 {
@@ -432,6 +456,12 @@ void RTXMGRenderer::Launch(nvrhi::ICommandList* commandList,
     CreateOutputs(commandList);
 
     BuildOrUpdatePipelines();
+
+    if (m_needsEnvMapUpdate)
+    {
+        UpdateEnvMapSampling(commandList);
+        m_needsEnvMapUpdate = false;
+    }
 
     if (!m_bindingSet || m_needsRebind)
     {
@@ -754,9 +784,9 @@ void RTXMGRenderer::SetRenderSize(int2 renderSize, int2 displaySize)
 
 void RTXMGRenderer::SetTimeView(bool timeView)
 {
-    m_pipelinesNeedsUpdate = ((int)timeView != m_params.enableTimeView);
     m_params.enableTimeView = timeView;
     ResetSubframes();
+    ResetDenoiser();
 }
 
 void RTXMGRenderer::SceneFinishedLoading(std::shared_ptr<RTXMGScene> scene)
@@ -837,8 +867,7 @@ void RTXMGRenderer::CreateAccelStructs()
         m_scene->GetSceneGraph()->GetMeshInstances().size();
     m_topLevelAS = GetDevice()->createAccelStruct(tlasDesc);
 
-    auto shaderFactory = GetShaderFactory();
-    m_clusterAccelBuilder = std::make_unique<ClusterAccelBuilder>(*shaderFactory, m_commonPasses, GetDescriptorTable()->GetDescriptorTable(), GetDevice());
+    m_clusterAccelBuilder = std::make_unique<ClusterAccelBuilder>(*m_shaderFactory, m_commonPasses, GetDescriptorTable()->GetDescriptorTable(), GetDevice());
     m_sceneAccels = std::make_unique<ClusterAccels>();
 }
 
@@ -853,6 +882,7 @@ void RTXMGRenderer::UpdateEnvMapTransform()
 void RTXMGRenderer::SetEnvMap(const std::string& filePath, nvrhi::ICommandList* commandList)
 {
     m_needsRebind = true;
+    m_needsEnvMapUpdate = true;
 
     auto existing = m_textureCache->GetLoadedTexture(filePath);
     if (existing)
@@ -863,9 +893,6 @@ void RTXMGRenderer::SetEnvMap(const std::string& filePath, nvrhi::ICommandList* 
     {
         m_envMap = m_textureCache->LoadTextureFromFile(filePath, false, m_commonPasses.get(), commandList);
     }
-
-    // Compute CDF for the environment map
-    UpdateEnvMapSampling(commandList);
 }
 
 void RTXMGRenderer::UpdateEnvMapSampling(nvrhi::ICommandList* commandList)
@@ -908,10 +935,13 @@ void RTXMGRenderer::UpdateEnvMapSampling(nvrhi::ICommandList* commandList)
         log::fatal("Failed to create binding set and layout for preprocess envmap shaders");
     }
 
-    auto runShader = [&params, &dumpIntermediateResults, &bindingSet, &commandList, this](nvrhi::ComputePipelineHandle &computePipeline, nvrhi::IShader *shader, uint32_t x, uint32_t y)
+    auto runShader = [&params, &dumpIntermediateResults, &bindingSet, &commandList, this](nvrhi::ComputePipelineHandle &computePipeline, 
+        const char *shaderPath, const char *entryPointName, uint32_t x, uint32_t y)
         {
             if (!computePipeline)
             {
+                auto shader = m_shaderFactory->CreateShader(shaderPath, entryPointName, nullptr, nvrhi::ShaderType::Compute);
+
                 auto computePipelineDesc = nvrhi::ComputePipelineDesc()
                     .setComputeShader(shader)
                     .addBindingLayout(m_preprocessEnvMapShaders.m_bindingLayout);
@@ -936,7 +966,7 @@ void RTXMGRenderer::UpdateEnvMapSampling(nvrhi::ICommandList* commandList)
     {
         nvrhi::utils::ScopedMarker marker(commandList, "Compute Conditional Func");
         runShader(m_preprocessEnvMapShaders.m_computeConditionalPSO, 
-            m_preprocessEnvMapShaders.m_computeConditional, div_ceil(inputWidth, 16), div_ceil(inputHeight, 16));
+            "envmap/compute_conditional.hlsl", "main", div_ceil(inputWidth, 16), div_ceil(inputHeight, 16));
     }
 
     if (dumpIntermediateResults)
@@ -957,7 +987,7 @@ void RTXMGRenderer::UpdateEnvMapSampling(nvrhi::ICommandList* commandList)
     {
         nvrhi::utils::ScopedMarker marker(commandList, "Compute  Marginal Func");
         runShader(m_preprocessEnvMapShaders.m_computeMarginalPSO,
-            m_preprocessEnvMapShaders.m_computeMarginal, 1, div_ceil(inputHeight, 32));
+            "envmap/compute_marginal.hlsl", "main", 1, div_ceil(inputHeight, 32));
     }
 
     if (dumpIntermediateResults)

@@ -126,6 +126,7 @@ public:
         ClusterStatistics& buildStats,
         uint32_t frameIndex,
         nvrhi::ICommandList* commandList);
+    void ReloadShaders();
     void BuildOrUpdatePipelines();
 
     void Launch(nvrhi::ICommandList* commandList, uint32_t frameIndex,
@@ -469,6 +470,7 @@ private:
 
     bool m_pipelinesNeedsUpdate = true;
     bool m_needsRebind = true;
+    bool m_needsEnvMapUpdate = false;
     bool m_displayZBuffer = false;
     std::unique_ptr<ZBuffer> m_zbuffer;
 };

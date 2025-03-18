@@ -483,32 +483,30 @@ bool RTXMGDemoApp::KeyboardUpdate(int key, int scancode, int action,
         case GLFW_KEY_ESCAPE:
             glfwSetWindowShouldClose(GetDeviceManager()->GetWindow(), true);
             break;
+        case GLFW_KEY_1:
+            NextShadingMode();
+            break;
+        case GLFW_KEY_2:
+            IncrementColorMode(1);
+            break;
+        case GLFW_KEY_3:
+            ToggleWireframe();
+            break;
+        case GLFW_KEY_4:
+            IncrementColorMode(-1);
+            break;
+        case GLFW_KEY_5:
+            NextTonemapper();
+            break;
         case GLFW_KEY_C:
             m_camera.Print();
             break;
         case GLFW_KEY_F:
             ResetCamera();
             break;
-        case GLFW_KEY_1:
-            NextShadingMode();
-            break;
-        case GLFW_KEY_5:
-            NextTonemapper();
-            break;
-        case GLFW_KEY_RIGHT:
-            IncrementMaxBounces(1);
-            break;
-        case GLFW_KEY_LEFT:
-            IncrementMaxBounces(-1);
-            break;
-        case GLFW_KEY_3:
-            ToggleWireframe();
-            break;
-        case GLFW_KEY_2:
-            IncrementColorMode(1);
-            break;
-        case GLFW_KEY_4:
-            IncrementColorMode(-1);
+        case GLFW_KEY_R:
+            if (mods & GLFW_MOD_CONTROL)
+                ReloadShaders();
             break;
         case GLFW_KEY_P:
             SaveScreenshot();
@@ -518,6 +516,12 @@ bool RTXMGDemoApp::KeyboardUpdate(int key, int scancode, int action,
             break;
         case GLFW_KEY_SLASH:
             ToggleUpdateTessellationCamera();
+            break;
+        case GLFW_KEY_RIGHT:
+            IncrementMaxBounces(1);
+            break;
+        case GLFW_KEY_LEFT:
+            IncrementMaxBounces(-1);
             break;
         }
     }
@@ -802,10 +806,20 @@ void RTXMGDemoApp::Render(nvrhi::IFramebuffer* framebuffer)
 {
     auto& profiler = Profiler::Get();
 
+    auto& renderer = GetRenderer();
+    if (m_reloadShaders)
+    {
+        GetDevice()->waitForIdle();
+
+        renderer.ReloadShaders();
+
+        m_lerpVerticesPSO.Reset();
+        m_reloadShaders = false;
+    }
+
     // Calculate DLSS settings
     UpdateDLSSSettings();
 
-    auto& renderer = GetRenderer();
     renderer.SetRenderSize(m_renderSize, m_displaySize);
     renderer.SetRenderCamera(m_camera, m_cameraReset);
     m_sunLight->SetDirection(double3(m_camera.GetDirection()));
@@ -861,7 +875,6 @@ void RTXMGDemoApp::Render(nvrhi::IFramebuffer* framebuffer)
             }
             m_tesselationCamera = m_camera;
         }
-
 
         renderer.Launch(m_commandList, GetFrameIndex(), m_sunLight);
 

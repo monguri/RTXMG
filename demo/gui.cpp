@@ -500,9 +500,21 @@ void UserInterface::BuildUIMain(int2 screenLayoutSize)
         }
     }
 
-#if ENABLE_DEV_FEATURE
+#if RTXMG_DEV_FEATURES
     if (ImGui::CollapsingHeader("Debug", ImGuiTreeNodeFlags_DefaultOpen))
     {
+        ImGui::PushFont(m_iconicFont);
+        if (ImGui::Button((char const*)(u8"\ue0b3"
+            "## reload shaders"),
+            { 0.f, itemSize.y }))
+        {
+            m_app.ReloadShaders();
+        }
+        ImGui::PopFont();
+        if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
+            ImGui::SetTooltip("Reload Shaders (CTRL+R)");
+
+        ImGui::SameLine();
         ImGui::PushFont(m_iconicFont);
         if (ImGui::Button((char const*)(u8"\ue071"
             "## dump fill clusters"),

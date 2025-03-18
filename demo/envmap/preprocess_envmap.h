@@ -28,9 +28,7 @@
 
 struct PreprocessEnvMapShaders
 {
-    nvrhi::ShaderHandle m_computeConditional;
     nvrhi::ComputePipelineHandle m_computeConditionalPSO;
-    nvrhi::ShaderHandle m_computeMarginal;
     nvrhi::ComputePipelineHandle m_computeMarginalPSO;
 
     nvrhi::BindingLayoutHandle m_bindingLayout;

@@ -36,6 +36,7 @@ using namespace donut::math;
 void ScanSystem::Init(std::shared_ptr<donut::engine::ShaderFactory> shaderFactory, nvrhi::IDevice* device)
 {
     m_prefixScan = shaderFactory->CreateShader("envmap/prefix_scan.hlsl", "main", nullptr, nvrhi::ShaderType::Compute);
+    m_prefixScanPSO.Reset();
     if (!m_prefixScan)
     {
         log::fatal("Failed to create prefix scan shader");

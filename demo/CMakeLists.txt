@@ -37,6 +37,12 @@ add_executable(${app}
 )
 target_link_libraries(${app} PUBLIC envmap rtxmg donut_render donut_app donut_engine implot)
 
+option(RTXMG_DEV_FEATURES "Enable development features (debugging, etc)" OFF)
+if(RTXMG_DEV_FEATURES)
+    target_compile_definitions(${app} PUBLIC RTXMG_DEV_FEATURES=1)
+endif()
+
+
 if(ENABLE_AUDIO_ENGINE)
     if(TARGET audio_engine)
         target_link_libraries(${app} PRIVATE audio_engine)

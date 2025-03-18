@@ -89,8 +89,6 @@ private:
     std::chrono::steady_clock::time_point m_currFrameStart = {};
     std::chrono::steady_clock::time_point m_prevFrameStart = {};
     float m_animationTime = 0.0f;
-    bool m_animationLooped = false;
-    bool m_animationUpdated = false;
 
     std::unique_ptr<RTXMGRenderer> m_renderer;
     std::unique_ptr<ZRenderer> m_zRenderer;
@@ -99,6 +97,8 @@ private:
     nvrhi::BindingLayoutHandle m_lerpVerticesBL;
     nvrhi::ComputePipelineHandle m_lerpVerticesPSO;
 
+    bool m_reloadShaders = false;
+    bool m_animationUpdated = false;
     bool m_accelBuilderNeedsUpdate = true;
     bool m_dumpFineTess = false;
     bool m_screenshot = false;
@@ -138,7 +138,7 @@ private:
     void DoSaveScreenshot(nvrhi::ITexture* framebufferTexture, std::string const& filename = "");
     void DoDumpFineTess(std::string const& filename = "");
     void DoDumpDebugBuffer(std::string const& filename = "");
-    
+        
     void LerpVertices(nvrhi::IBuffer* outBuffer,
         nvrhi::IBuffer* keyFrame0Buffer,
         nvrhi::IBuffer* keyFrame1Buffer,
@@ -192,6 +192,7 @@ public:
     void DumpFineTess();
     void SaveScreenshot();
     void DumpDebugBuffer();
+    void ReloadShaders() { m_reloadShaders = true; }
 
     TessellatorConfig::MemorySettings GetTessMemSettings() const { return m_args.tessMemorySettings; }
     void SetTessMemSettings(const TessellatorConfig::MemorySettings& settings);
