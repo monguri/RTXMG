@@ -1,6 +1,5 @@
 #pragma once
 
-
 struct ClusterTiling
 {
     uint16_t2 tilingSize;   // number of tiles in x and y direction
@@ -108,6 +107,7 @@ inline SurfaceTiling MakeSurfaceTiling(uint16_t2 surfaceSize)
     ret.subTilings[SurfaceTiling::CORNER].clusterSize = modCluster;
     ret.quadOffsets[SurfaceTiling::CORNER] = uint16_t2((uint16_t)(regularGridSize.x * targetEdgeSegments),
         (uint16_t)(regularGridSize.y * targetEdgeSegments));
+
     return ret;
 }
 

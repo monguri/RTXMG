@@ -33,7 +33,7 @@
 #define VIS_MODE_SURFACE 1
 
 #define PATCH_POINTS_WRITEABLE
-
+#define SUBDIVISION_PLAN_UNROLL [unroll]
 
 #include <donut/shaders/material_cb.h>
 #include <donut/shaders/binding_helpers.hlsli>
@@ -290,6 +290,7 @@ float CalculateEdgeVisibility(float visibility, uint32_t waveSampleOffset, uint3
     if (g_Params.enableHiZVisibility)
     {
         float3 pscreen[3];
+        [unroll]
         for (uint16_t i = 0; i < 3; ++i)
         {
             pscreen[i].x = (.5f + pclip[i].x / pclip[i].w * .5f) * g_Params.viewportSize.x;
@@ -487,18 +488,23 @@ void GathererWriteCluster(Cluster cluster, uint32_t clusterIndex, GridSampler gr
 {
     const nvrhi::GpuVirtualAddress vertexBufferAddress = g_Params.clusterVertexPositionsBaseAddress + nvrhi::GpuVirtualAddress(cluster.nVertexOffset * sizeof(float3));
 
-    u_IndirectArgData[clusterIndex].clusterIdOffset = clusterIndex;
-    u_IndirectArgData[clusterIndex].geometryIndexOffset = localGeometryIndex;
-    u_IndirectArgData[clusterIndex].clusterTemplate = templateAddress;
-    u_IndirectArgData[clusterIndex].vertexBuffer.startAddress = vertexBufferAddress;
-    u_IndirectArgData[clusterIndex].vertexBuffer.strideInBytes = sizeof(float3);
+    nvrhi::rt::cluster::IndirectInstantiateTemplateArgs indirectArgs = (nvrhi::rt::cluster::IndirectInstantiateTemplateArgs)0;
+    indirectArgs.clusterIdOffset = clusterIndex;
+    indirectArgs.geometryIndexOffset = localGeometryIndex;
+    indirectArgs.clusterTemplate = templateAddress;
+    indirectArgs.vertexBuffer.startAddress = vertexBufferAddress;
+    indirectArgs.vertexBuffer.strideInBytes = sizeof(float3);
+    u_IndirectArgData[clusterIndex] = indirectArgs;
 
-    u_ClusterShadingData[clusterIndex].m_edgeSegments = gridSampler.edgeSegments;
-    u_ClusterShadingData[clusterIndex].m_surfaceId = cluster.iSurface;
-    u_ClusterShadingData[clusterIndex].m_vertexOffset = cluster.nVertexOffset;
-    u_ClusterShadingData[clusterIndex].m_clusterOffset = cluster.offset;
-    u_ClusterShadingData[clusterIndex].m_clusterSizeX = cluster.sizeX;
-    u_ClusterShadingData[clusterIndex].m_clusterSizeY = cluster.sizeY;
+    ClusterShadingData shadingData = (ClusterShadingData)0;
+    shadingData.m_edgeSegments = gridSampler.edgeSegments;
+    shadingData.m_surfaceId = cluster.iSurface;
+    shadingData.m_vertexOffset = cluster.nVertexOffset;
+    shadingData.m_clusterOffset = cluster.offset;
+    shadingData.m_clusterSizeX = cluster.sizeX;
+    shadingData.m_clusterSizeY = cluster.sizeY;
+
+    u_ClusterShadingData[clusterIndex] = shadingData;
 }
 
 void WriteSurfaceWave(uint3 threadIdx, uint3 groupIdx, uint32_t iSurface, uint16_t edgeSegments, uint32_t waveSampleOffset)
@@ -516,7 +522,9 @@ void WriteSurfaceWave(uint3 threadIdx, uint3 groupIdx, uint32_t iSurface, uint16
 
     
     // Get the amount of sizes to enable the templates
-#define ENABLE_USE_WAVE_INTRINSICS 1
+    // Wave intrinsics appear to use local data loads for subTilings array due to dynamic access
+    // This appears to cause long scoreboards waiting for local data loads.
+#define ENABLE_USE_WAVE_INTRINSICS 0
 #if ENABLE_USE_WAVE_INTRINSICS
     _Static_assert(SurfaceTiling::N_SUB_TILINGS <= kComputeClusterTilingThreadsX, "Must have enough lanes to use wave ops");
     uint32_t clasBlocks = 0;
@@ -524,17 +532,22 @@ void WriteSurfaceWave(uint3 threadIdx, uint3 groupIdx, uint32_t iSurface, uint16
     uint32_t vertexCount = 0;
     if (iLane < SurfaceTiling::N_SUB_TILINGS)
     {
+
         ClusterTiling clusterTiling = surfaceTiling.subTilings[iLane];
         uint32_t templateIndex = GetTemplateIndex(clusterTiling.clusterSize);
-        clasBlocks += (t_ClasInstantiationBytes[templateIndex] / nvrhi::rt::cluster::kClasByteAlignment) * clusterTiling.ClusterCount();
+        uint32_t tilingClusterCount = clusterTiling.ClusterCount();
+        uint32_t tilingVertexCount = clusterTiling.VertexCount();
+
+        clasBlocks = (t_ClasInstantiationBytes[templateIndex] / nvrhi::rt::cluster::kClasByteAlignment) * tilingClusterCount;
+
         clasBlocks += WaveReadLaneAt(clasBlocks, WaveGetLaneIndex() + 2); // Lanes: [0+2], [1+3]
         clasBlocks += WaveReadLaneAt(clasBlocks, WaveGetLaneIndex() + 1); // Lanes: [0+1]
 
-        clusterCount = clusterTiling.ClusterCount();
+        clusterCount = tilingClusterCount;
         clusterCount += WaveReadLaneAt(clusterCount, WaveGetLaneIndex() + 2);
         clusterCount += WaveReadLaneAt(clusterCount, WaveGetLaneIndex() + 1);
 
-        vertexCount = clusterTiling.VertexCount();
+        vertexCount = tilingVertexCount;
         vertexCount += WaveReadLaneAt(vertexCount, WaveGetLaneIndex() + 2);
         vertexCount += WaveReadLaneAt(vertexCount, WaveGetLaneIndex() + 1);
     }
@@ -546,16 +559,20 @@ void WriteSurfaceWave(uint3 threadIdx, uint3 groupIdx, uint32_t iSurface, uint16
     if (iLane == 0)
     {   
 #if !ENABLE_USE_WAVE_INTRINSICS
-        uint32_t clusterCount = surfaceTiling.ClusterCount();
-        uint32_t vertexCount = surfaceTiling.VertexCount();
-
-        // Use clas alignment to avoid using 64-bit atomic
+        uint32_t clusterCount = 0;
+        uint32_t vertexCount = 0;
         uint32_t clasBlocks = 0;
+        [unroll]
         for (uint16_t iTiling = 0; iTiling < surfaceTiling.N_SUB_TILINGS; ++iTiling)
         {
             ClusterTiling clusterTiling = surfaceTiling.subTilings[iTiling];
             uint32_t templateIndex = GetTemplateIndex(clusterTiling.clusterSize);
-            clasBlocks += (t_ClasInstantiationBytes[templateIndex] / nvrhi::rt::cluster::kClasByteAlignment) * clusterTiling.ClusterCount();
+            uint32_t tilingClusterCount = clusterTiling.ClusterCount();
+            uint32_t tilingVertexCount = clusterTiling.VertexCount();
+
+            clusterCount += tilingClusterCount;
+            vertexCount += tilingVertexCount;
+            clasBlocks += (t_ClasInstantiationBytes[templateIndex] / nvrhi::rt::cluster::kClasByteAlignment) * tilingClusterCount;
         }
 #endif
 
@@ -598,22 +615,27 @@ void WriteSurfaceWave(uint3 threadIdx, uint3 groupIdx, uint32_t iSurface, uint16
     nvrhi::GpuVirtualAddress tilingClusterBaseAddress = g_Params.clasDataBaseAddress + clasBlocksOffset * nvrhi::rt::cluster::kClasByteAlignment;
     uint32_t localGeometryIndex = t_SurfaceToGeometryIndex[iSurface];
 
+    // Unroll so that we don't have local data loads from the surface tiling array
+    [unroll]
     for (uint16_t iTiling = 0; iTiling < surfaceTiling.N_SUB_TILINGS; ++iTiling)
     {
         const ClusterTiling clusterTiling = surfaceTiling.subTilings[iTiling];
+        uint32_t tilingClusterCount = clusterTiling.ClusterCount();
+        uint32_t tilingClusterVertexCount = clusterTiling.ClusterVertexCount();
+        uint16_t2 tilingClusterSize = clusterTiling.clusterSize;
+        uint32_t tilingVertexCount =  tilingClusterCount * tilingClusterVertexCount;
 
-        const uint16_t2 clusterResolution = uint16_t2(clusterTiling.clusterSize.x, clusterTiling.clusterSize.y);
-        const uint32_t templateIndex = GetTemplateIndex(clusterResolution);
+        const uint32_t templateIndex = GetTemplateIndex(tilingClusterSize);
         nvrhi::GpuVirtualAddress templateAddress = t_TemplateAddresses[templateIndex];
         uint32_t clasBytes = t_ClasInstantiationBytes[templateIndex];
 
         // make clusters with tilingSize
         for (uint32_t iCluster = iLane;
-            iCluster < clusterTiling.ClusterCount();
-            iCluster += 32)
+            iCluster < tilingClusterCount;
+            iCluster += kComputeClusterTilingThreadsX)
         {
-            Cluster cluster = MakeCluster(iSurface, tilingVertexOffset + clusterTiling.ClusterVertexCount() * iCluster,
-                    surfaceTiling.ClusterOffset(iTiling, iCluster), clusterTiling.clusterSize.x, clusterTiling.clusterSize.y);
+            Cluster cluster = MakeCluster(iSurface, tilingVertexOffset + tilingClusterVertexCount * iCluster,
+                    surfaceTiling.ClusterOffset(iTiling, iCluster), tilingClusterSize.x, tilingClusterSize.y);
             uint32_t clusterIndex = tilingClusterOffset + iCluster;
             u_Clusters[clusterIndex] = cluster;
 
@@ -621,9 +643,9 @@ void WriteSurfaceWave(uint3 threadIdx, uint3 groupIdx, uint32_t iSurface, uint16
 
             u_ClasAddresses[clusterIndex] = tilingClusterBaseAddress + clasBytes * iCluster;
         }
-        tilingClusterOffset += clusterTiling.ClusterCount();
-        tilingVertexOffset += clusterTiling.VertexCount();
-        tilingClusterBaseAddress += clasBytes * clusterTiling.ClusterCount();
+        tilingClusterOffset += tilingClusterCount;
+        tilingVertexOffset += tilingVertexCount;
+        tilingClusterBaseAddress += clasBytes * tilingClusterCount;
     }
 }
 
