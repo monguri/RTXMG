@@ -511,16 +511,21 @@ void WriteSurfaceWave(uint3 threadIdx, uint3 groupIdx, uint32_t iSurface, uint16
 {
     // PatchGatherer
     const int iLane = threadIdx.x;
-    if (iLane < 4)
+
+    GridSampler rSampler;
+    rSampler.edgeSegments[0] = WaveReadLaneAt(edgeSegments, 0);
+    rSampler.edgeSegments[1] = WaveReadLaneAt(edgeSegments, 1);
+    rSampler.edgeSegments[2] = WaveReadLaneAt(edgeSegments, 2);
+    rSampler.edgeSegments[3] = WaveReadLaneAt(edgeSegments, 3);
+    
+    if (iLane == 0)
     {
-        u_GridSamplers[iSurface].edgeSegments[iLane] = edgeSegments;
+        u_GridSamplers[iSurface] = rSampler;
     }
 
-    GridSampler rSampler = u_GridSamplers[iSurface];
     uint16_t2 surfaceSize = rSampler.GridSize();
     SurfaceTiling surfaceTiling = MakeSurfaceTiling(surfaceSize);
 
-    
     // Get the amount of sizes to enable the templates
     // Wave intrinsics appear to use local data loads for subTilings array due to dynamic access
     // This appears to cause long scoreboards waiting for local data loads.
