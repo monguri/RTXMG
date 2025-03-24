@@ -104,6 +104,7 @@ public:
     donut::engine::DescriptorHandle m_positionsPrevDescriptor;
     donut::engine::DescriptorHandle m_surfaceToGeometryIndexDescriptor;   
 
+    bool m_hasDisplacementMaterial = false;
     donut::engine::DescriptorHandle m_topologyQualityDescriptor;
 
 public:

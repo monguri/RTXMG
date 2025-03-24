@@ -376,7 +376,7 @@ bool RTXMGScene::LoadWithExecutor(const std::filesystem::path& filename,
 
     
     std::vector<std::shared_ptr<MeshInfo>> sceneMeshInfos;
-    for (const auto& subdMesh : m_subdMeshes)
+    for (auto& subdMesh : m_subdMeshes)
     {
         auto shape = subdMesh->GetShape();
     
@@ -476,6 +476,11 @@ bool RTXMGScene::LoadWithExecutor(const std::filesystem::path& filename,
             }
 
             meshInfo->objectSpaceBounds |= geometry->objectSpaceBounds;
+
+            if (geometry->material->normalTexture.get() && geometry->material->enableNormalTexture)
+            {
+                subdMesh->m_hasDisplacementMaterial = true;
+            }
         }
     }
 

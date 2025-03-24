@@ -680,7 +680,7 @@ void ClusterAccelBuilder::FillInstanceClusters(const RTXMGScene& scene, ClusterA
             m_fillClustersBindlessBL = m_device->createBindlessLayout(bindlessLayoutDesc);
         }
 
-        FillClustersPermutation shaderPermutation(subd.m_surfaceToGeometryIndexBuffer != nullptr);
+        FillClustersPermutation shaderPermutation(subd.m_hasDisplacementMaterial);
 
         if (!m_fillClustersPSOs[shaderPermutation.index()])
         {
@@ -830,7 +830,7 @@ void ClusterAccelBuilder::ComputeInstanceClusterTiling(const SubdivisionSurface&
         log::fatal("Failed to create hiz binding set and layout for compute_cluster_tiling.hlsl");
     }
 
-    ComputeClusterTilingPermutation shaderPermutation(subdivisionSurface.m_surfaceToGeometryIndexBuffer != nullptr,
+    ComputeClusterTilingPermutation shaderPermutation(subdivisionSurface.m_hasDisplacementMaterial,
         m_tessellatorConfig.enableFrustumVisibility,
         m_tessellatorConfig.tessMode,
         m_tessellatorConfig.visMode);
