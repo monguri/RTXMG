@@ -876,9 +876,7 @@ void ClusterAccelBuilder::ComputeInstanceClusterTiling(const SubdivisionSurface&
 
     const uint32_t numSurfaces = subdivisionSurface.SurfaceCount();
 
-    stats::clusterAccelSamplers.clusterTilingTime.Start(commandList);
     commandList->dispatch(div_ceil(numSurfaces, kComputeClusterTilingWavesPerSurface), 1, 1);
-    stats::clusterAccelSamplers.clusterTilingTime.Stop();
 }
 
 void ClusterAccelBuilder::CopyClusterOffset(int instanceIndex, const nvrhi::BufferRange& tessCounterRange, nvrhi::ICommandList* commandList)
@@ -1128,6 +1126,7 @@ void ClusterAccelBuilder::BuildAccel(const RTXMGScene& scene, const TessellatorC
     commandList->clearBufferUInt(m_fillClustersDispatchIndirectBuffer, 0);
 
     {
+        stats::clusterAccelSamplers.clusterTilingTime.Start(commandList);
         uint32_t surfaceOffset = 0;
         for (uint32_t i = 0; i < instances.size(); ++i)
         {
@@ -1147,6 +1146,7 @@ void ClusterAccelBuilder::BuildAccel(const RTXMGScene& scene, const TessellatorC
             // Save cluster offset for this instance
             CopyClusterOffset(i, tessCounterRange, commandList);
         }
+        stats::clusterAccelSamplers.clusterTilingTime.Stop();
     }
 
     if (m_tessellatorConfig.enableLogging)

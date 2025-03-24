@@ -327,14 +327,17 @@ namespace stats {
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip(
                     "GPU timers:\n\n"
-                    "  - Cluster Tiling: tessellation metric\n"
-                    "    + limit surface evaluation prep\n"
-                    "  - Fill Clusters: subdivision surface\n"
+                    "  - Cluster Tiling: %.4fms tessellation metric\n"
+                    "    + limit surface evaluation prep\n\n"
+                    "  - Fill Clusters: %.4fms subdivision surface\n"
                     "    limit evaluation + vertex writing.\n\n"
-                    "  - CLAS build: CLAS build time.\n\n"
-                    "  - BLAS build: BLAS from CLAS build time\n\n"
-                    "    (WIP: toggle with checkbox below)\n"
-                    "\n");
+                    "  - CLAS build: %.4fms CLAS build time.\n\n"
+                    "  - BLAS build: %.4fms BLAS from CLAS build time\n\n"
+                    "    (WIP: toggle with checkbox below)",
+                    clusterTiling.RunningAverage(),
+                    fillClusters.RunningAverage(),
+                    buildClas.RunningAverage(),
+                    buildBlas.RunningAverage());
         }
         ImGui::Spacing();
 
