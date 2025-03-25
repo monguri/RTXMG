@@ -38,18 +38,13 @@
 struct TessellationCounters
 {
     uint32_t clusters;
-    uint32_t vertices;
-    uint32_t triangles;
     uint32_t desiredClusters;
     uint32_t desiredVertices;
     uint32_t desiredTriangles;
-
-    uint32_t clasBlocks;
     uint32_t desiredClasBlocks;
 
 #ifdef __cplusplus
     size_t DesiredClasBytes() const { return size_t(desiredClasBlocks) * nvrhi::rt::cluster::kClasByteAlignment; }
-    size_t ClasBytes() const { return size_t(clasBlocks) * nvrhi::rt::cluster::kClasByteAlignment; }
 #endif
 };
 

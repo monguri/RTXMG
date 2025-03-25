@@ -332,8 +332,7 @@ namespace stats {
                     "  - Fill Clusters: %.4fms subdivision surface\n"
                     "    limit evaluation + vertex writing.\n\n"
                     "  - CLAS build: %.4fms CLAS build time.\n\n"
-                    "  - BLAS build: %.4fms BLAS from CLAS build time\n\n"
-                    "    (WIP: toggle with checkbox below)",
+                    "  - BLAS build: %.4fms BLAS from CLAS build time",
                     clusterTiling.RunningAverage(),
                     fillClusters.RunningAverage(),
                     buildClas.RunningAverage(),

@@ -1154,19 +1154,20 @@ void ClusterAccelBuilder::BuildAccel(const RTXMGScene& scene, const TessellatorC
         // sync download to get current frame results
         m_tessellationCountersBuffer.Log(commandList, [](std::ostream& ss, const TessellationCounters& e)
             {
-                ss << "{vert: " << e.desiredVertices <<  "/" << e.vertices 
-                    << ", tri: " << e.desiredTriangles << "/" << e.triangles 
-                    << ", cluster: " << e.desiredClusters << "/" << e.clusters 
-                    << ", clasBytes: " << e.DesiredClasBytes() << "/" << e.ClasBytes() << "}";
+                ss << "{cluster: " << e.desiredClusters << "/" << e.clusters 
+                    << ", vertices: " << e.desiredVertices
+                    << ", tri: " << e.desiredTriangles
+                    << ", clasBytes: " << e.DesiredClasBytes() << "}";
                 return true;
             });
         TessellationCounters currentTessCounts = m_tessellationCountersBuffer.Download(commandList, false)[tessCounterIndex];
 
         log::info("tessellation counters: ");
-        log::info("  vertexCount: %u", currentTessCounts.vertices);
-        log::info("  triangleCount: %u", currentTessCounts.triangles);
-        log::info("  clusterCount: %u", currentTessCounts.clusters);
-        log::info("  clasBytes: %llu", currentTessCounts.ClasBytes());
+        log::info("  clusters: %u", currentTessCounts.clusters);
+        log::info("  desiredClusters: %u", currentTessCounts.desiredClusters);
+        log::info("  desiredVertices: %u", currentTessCounts.desiredVertices);
+        log::info("  desiredTriangles: %u", currentTessCounts.desiredTriangles);
+        log::info("  desiredClasBytes: %llu", currentTessCounts.DesiredClasBytes());
 
         m_fillClustersDispatchIndirectBuffer.Log(commandList);
         m_clusterOffsetCountsBuffer.Log(commandList);
@@ -1227,7 +1228,8 @@ void ClusterAccelBuilder::BuildAccel(const RTXMGScene& scene, const TessellatorC
     stats.desired.m_blasSize = m_createBlasSizeInfo.resultMaxSizeInBytes;
     stats.desired.m_blasScratchSize = m_createBlasSizeInfo.scratchSizeInBytes;
 
-    stats.allocated.m_numTriangles = counters.triangles;
+    // Atomics are expensive so we don't track the number of allocated triangles
+    stats.allocated.m_numTriangles = counters.desiredTriangles;
     stats.allocated.m_numClusters = m_maxClusters;
     stats.allocated.m_vertexBufferSize = accels.clusterVertexPositionsBuffer.GetBytes();
     stats.allocated.m_clasSize = accels.clasBuffer.GetBytes();

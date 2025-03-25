@@ -538,7 +538,6 @@ void WriteSurfaceWave(uint3 threadIdx, uint3 groupIdx, uint32_t iSurface, uint16
     uint32_t vertexCount = 0;
     if (iLane < SurfaceTiling::N_SUB_TILINGS)
     {
-
         ClusterTiling clusterTiling = surfaceTiling.subTilings[iLane];
         uint32_t templateIndex = GetTemplateIndex(clusterTiling.clusterSize);
         uint32_t tilingClusterCount = clusterTiling.ClusterCount();
@@ -581,28 +580,25 @@ void WriteSurfaceWave(uint3 threadIdx, uint3 groupIdx, uint32_t iSurface, uint16
             clasBlocks += (t_ClasInstantiationBytes[templateIndex] / nvrhi::rt::cluster::kClasByteAlignment) * tilingClusterCount;
         }
 #endif
+        uint32_t clusterTris = 2 * (uint32_t)surfaceSize.x * (uint32_t)surfaceSize.y;
+        uint32_t dummy;
 
         InterlockedAdd(u_TessellationCounters[0].desiredClasBlocks, clasBlocks, clasBlocksOffset);
         InterlockedAdd(u_TessellationCounters[0].desiredClusters, clusterCount, surfaceClusterOffset);
         InterlockedAdd(u_TessellationCounters[0].desiredVertices, vertexCount, surfaceVertexOffset);
-
-        uint32_t clusterTris = 2 * (uint32_t)surfaceSize.x * (uint32_t)surfaceSize.y;
-        uint32_t dummy;
         InterlockedAdd(u_TessellationCounters[0].desiredTriangles, clusterTris, dummy);
 
         allocationSucceeded = ((clasBlocksOffset + clasBlocks) <= g_Params.maxClasBlocks) &&
             ((surfaceClusterOffset + clusterCount) <= g_Params.maxClusters) &&
             ((surfaceVertexOffset + vertexCount) <= g_Params.maxVertices);
 
-
-        // If we passed all allocations, get real offsets here
+        // If we passed all allocations increment the real cluster counter.
+        // This code used to track allocated clasBlocks, vertices, triangles 
+        // but atomics are expensive and it doubled the number of stalls on atomics
         if (allocationSucceeded)
         {
-            InterlockedAdd(u_TessellationCounters[0].clasBlocks, clasBlocks, clasBlocksOffset);
             InterlockedAdd(u_TessellationCounters[0].clusters, clusterCount, surfaceClusterOffset);
-            InterlockedAdd(u_TessellationCounters[0].vertices, vertexCount, surfaceVertexOffset);
-            InterlockedAdd(u_TessellationCounters[0].triangles, clusterTris, dummy);
-        }        
+        }
     }
 
     allocationSucceeded = WaveReadLaneAt(allocationSucceeded, 0);
