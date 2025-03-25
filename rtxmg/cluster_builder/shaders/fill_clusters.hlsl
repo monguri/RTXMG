@@ -85,44 +85,6 @@ void GathererWriteTexcoord(TexCoordLimitFrame texcoord, uint32_t clusterIndex, u
     u_ClusterShadingData[clusterIndex].m_texcoords[cornerIndex] = texcoord.uv;
 }
 
-LimitFrame EvaluateSubd(uint32_t iSurface, float2 uv)
-{
-    SubdivisionEvaluatorHLSL subd;
-    subd.m_surfaceIndex = iSurface;
-    subd.m_isolationLevel = (uint16_t)g_TessParams.isolationLevel;
-    subd.m_surfaceDescriptors = t_VertexSurfaceDescriptors;
-    subd.m_plans = t_Plans;
-    subd.m_subpatchTrees = t_SubpatchTrees;
-    subd.m_patchPointsIndices = t_PatchPointIndices;
-    subd.m_stencilMatrix = t_StencilMatrix;
-    
-    subd.m_vertexControlPointIndices = t_VertexControlPointIndices;
-    subd.m_vertexControlPoints = t_VertexControlPoints;
-    subd.m_vertexPatchPointsOffsets = t_VertexPatchPointsOffsets;
-    subd.m_vertexPatchPoints = t_VertexPatchPoints;
-
-    // always do the non-displaced evaluation first.  Displacement maps will perturb this calculation below
-    LimitFrame limit = subd.Evaluate(uv);
-
-#if DISPLACEMENT_MAPS
-    float displacementScale;
-    int displacementTexIndex;
-
-    uint32_t geometryIndex = t_SurfaceToGeometryIndex[iSurface] + g_TessParams.firstGeometryIndex;
-    GeometryData geometry = t_GeometryData[geometryIndex];
-    MaterialConstants material = t_MaterialConstants[geometry.materialIndex];
-
-    GetDisplacement(material, g_TessParams.globalDisplacementScale, displacementTexIndex, displacementScale);
-    limit = DoDisplacement(t_TexCoordSurfaceDescriptors,
-                t_TexCoordControlPointIndices, t_TexCoordPatchPointsOffsets, 
-                t_TexCoordPatchPoints, t_SubdTexCoords, 
-                limit, iSurface, uv, 
-                t_BindlessTextures, displacementTexIndex, 
-                s_DisplacementSampler, displacementScale);
-#endif
-    return limit;
-}
-
 [numthreads(32, kFillClustersVerticesWaves, 1)]
 void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
 {
@@ -136,14 +98,49 @@ void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_Gr
     const uint32_t iSurface = rCluster.iSurface;
     const GridSampler rSampler = t_GridSamplers[iSurface];
 
+    SubdivisionEvaluatorHLSL subd;
+    subd.m_surfaceIndex = iSurface;
+    subd.m_isolationLevel = (uint16_t)g_TessParams.isolationLevel;
+    subd.m_surfaceDescriptors = t_VertexSurfaceDescriptors;
+    subd.m_plans = t_Plans;
+    subd.m_subpatchTrees = t_SubpatchTrees;
+    subd.m_patchPointsIndices = t_PatchPointIndices;
+    subd.m_stencilMatrix = t_StencilMatrix;
+
+    subd.m_vertexControlPointIndices = t_VertexControlPointIndices;
+    subd.m_vertexControlPoints = t_VertexControlPoints;
+    subd.m_vertexPatchPointsOffsets = t_VertexPatchPointsOffsets;
+    subd.m_vertexPatchPoints = t_VertexPatchPoints;
+
+#if DISPLACEMENT_MAPS
+    float displacementScale;
+    int displacementTexIndex;
+
+    uint32_t geometryIndex = t_SurfaceToGeometryIndex[iSurface] + g_TessParams.firstGeometryIndex;
+    GeometryData geometry = t_GeometryData[geometryIndex];
+    MaterialConstants material = t_MaterialConstants[geometry.materialIndex];
+
+    GetDisplacement(material, g_TessParams.globalDisplacementScale, displacementTexIndex, displacementScale);
+    Texture2D displacementTex = t_BindlessTextures[displacementTexIndex];
+#endif
+
     {
         // wave wide loop
         for (uint16_t pointIndex = (uint16_t)threadIdx.x; pointIndex < rCluster.VerticesPerCluster(); pointIndex += 32)
         {
-            float2 uv;
-            uv = rSampler.UV(rCluster.Linear2Idx2D(pointIndex) + rCluster.offset, (ClusterPattern)g_TessParams.clusterPattern);
+            float2 uv = rSampler.UV(rCluster.Linear2Idx2D(pointIndex) + rCluster.offset, (ClusterPattern)g_TessParams.clusterPattern);
 
-            const LimitFrame limit = EvaluateSubd(iSurface, uv);
+            // always do the non-displaced evaluation first.  Displacement maps will perturb this calculation below
+            LimitFrame limit = subd.Evaluate(uv);
+
+#if DISPLACEMENT_MAPS
+            limit = DoDisplacement(t_TexCoordSurfaceDescriptors,
+                        t_TexCoordControlPointIndices, t_TexCoordPatchPointsOffsets,
+                        t_TexCoordPatchPoints, t_SubdTexCoords,
+                        limit, iSurface, uv,
+                        displacementTex,
+                        s_DisplacementSampler, displacementScale);
+#endif
 
             GathererWriteLimit(limit, rCluster, pointIndex);
         }

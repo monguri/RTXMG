@@ -363,20 +363,21 @@ void WaveEvaluateBSplinePatch8(SubdivisionEvaluatorHLSL subd, uint3 threadIdx, u
     }
     
 #if DISPLACEMENT_MAPS
+    uint32_t geometryIndex = t_SurfaceToGeometryIndex[subd.m_surfaceIndex] + g_Params.firstGeometryIndex;
+    GeometryData geometry = t_GeometryData[geometryIndex];
+    MaterialConstants material = t_MaterialConstants[geometry.materialIndex];
+
+    float displacementScale;
+    int displacementTexIndex;
+    GetDisplacement(material, g_Params.globalDisplacementScale, displacementTexIndex, displacementScale);
+    Texture2D displacementTex = t_BindlessTextures[displacementTexIndex];
     if (iLane < kNumWaveSurfaceUVSamples)
     {
-        uint32_t geometryIndex = t_SurfaceToGeometryIndex[subd.m_surfaceIndex] + g_Params.firstGeometryIndex;
-        GeometryData geometry = t_GeometryData[geometryIndex];
-        MaterialConstants material = t_MaterialConstants[geometry.materialIndex];
-
-        float displacementScale;
-        int displacementTexIndex;
-        GetDisplacement(material, g_Params.globalDisplacementScale, displacementTexIndex, displacementScale);
         LimitFrame displaced = DoDisplacement(t_TexCoordSurfaceDescriptors,
                 t_TexCoordControlPointIndices, t_TexCoordPatchPointsOffsets,
                 u_TexCoordPatchPoints, t_TexCoords,
             samples[waveSampleOffset + iLane], subd.m_surfaceIndex, kWaveSurfaceUVSamples[iLane],
-            t_BindlessTextures, displacementTexIndex,
+            displacementTex,
             s_DisplacementSampler, displacementScale);
         samples[waveSampleOffset + iLane] = displaced;
     }

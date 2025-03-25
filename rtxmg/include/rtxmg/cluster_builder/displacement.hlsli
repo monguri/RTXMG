@@ -48,8 +48,7 @@ LimitFrame DoDisplacement(StructuredBuffer<LinearSurfaceDescriptor> surfaceDescr
     LimitFrame limit,
     uint32_t iSurface,
     float2 uv,
-    Texture2D bindlessTextures[],
-    int displacementTexIndex,
+    Texture2D displacementTex,
     SamplerState dispSampler,
     float scale)
 {
@@ -57,9 +56,7 @@ LimitFrame DoDisplacement(StructuredBuffer<LinearSurfaceDescriptor> surfaceDescr
     {
         return limit;
     }
-    
-    Texture2D displacementTex = bindlessTextures[displacementTexIndex];
-    
+        
     // compute subd limit and normal
     const float3 normal = normalize( cross( limit.deriv1, limit.deriv2 ) );
 
