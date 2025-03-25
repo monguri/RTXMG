@@ -82,6 +82,9 @@ endif()
 #
 # Installation & packaging
 #
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+    set(CMAKE_INSTALL_PREFIX "${CMAKE_SOURCE_DIR}/_install" CACHE PATH "Installation directory" FORCE)
+endif()
 
 install(TARGETS ${app} DESTINATION "bin")
 
@@ -110,7 +113,10 @@ if(DONUT_D3D_AGILITY_SDK_ENABLED)
 endif()
 
 if(IS_DIRECTORY "${PROJECT_SOURCE_DIR}/assets")
-    install(DIRECTORY "${PROJECT_SOURCE_DIR}/assets" DESTINATION "." )
+    install(
+        DIRECTORY "${PROJECT_SOURCE_DIR}/assets" 
+        DESTINATION "." 
+        PATTERN "*.bin" EXCLUDE)
 endif()
 
 set(CPACK_GENERATOR "ZIP")

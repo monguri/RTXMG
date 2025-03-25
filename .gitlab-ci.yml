@@ -1,0 +1,29 @@
+stages:
+  - build
+
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+
+build-windows:
+  stage: build
+  tags:
+    - os/win11
+  rules:
+    - if: '$ENABLE_JOBS =~ /build-windows/'
+  parallel:
+    matrix:
+      - BUILD_TYPE: ['Release', 'Debug']
+        DX12: 'ON'
+        VULKAN: 'OFF'
+  script:
+    - tools/set_vs_vars.ps1
+    - mkdir build
+    - cd build
+    - cmake .. -G "Visual Studio 17 2022" -A x64 "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DDONUT_WITH_DX12=$DX12" "-DDONUT_WITH_VULKAN=$VULKAN"
+    - cmake --build . --config "$BUILD_TYPE" --target package
+    
+  artifacts:
+    when: on_success
+    access: all
+    expire_in: 30 days
+    paths: ['build/rtxmg.*.zip']

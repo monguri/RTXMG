@@ -2,5 +2,6 @@
 scenes
 bin/
 _build/
+_install/
 build/
 .vscode/
