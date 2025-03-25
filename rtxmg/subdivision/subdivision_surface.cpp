@@ -52,22 +52,22 @@ using namespace donut;
 
 using TexcoordDeviceData = SubdivisionSurface::SurfaceTableDeviceData;
 
-void initSubdLinearDeviceData(const Tmr::LinearSurfaceTable& surface_table,
+void initSubdLinearDeviceData(const Tmr::LinearSurfaceTable& surfaceTable,
     TexcoordDeviceData& deviceData, nvrhi::ICommandList* commandList)
 {
     deviceData.surfaceDescriptors =
         CreateAndUploadBuffer<Tmr::LinearSurfaceDescriptor>(
-            surface_table.descriptors, "texture coordinate surface descriptors", commandList);
+            surfaceTable.descriptors, "texture coordinate surface descriptors", commandList);
 
     deviceData.controlPointIndices = CreateAndUploadBuffer<Vtr::Index>(
-        surface_table.controlPointIndices, "texture coordinate control point indices", commandList);
+        surfaceTable.controlPointIndices, "texture coordinate control point indices", commandList);
 
     // Support (patch) points
-    const uint32_t n_surfaces = surface_table.GetNumSurfaces();
-    std::vector<uint32_t> patchPointsOffsets(n_surfaces + 1, 0);
-    for (uint32_t i = 0; i < n_surfaces; i++)
+    const uint32_t numSurfaces = surfaceTable.GetNumSurfaces();
+    std::vector<uint32_t> patchPointsOffsets(numSurfaces + 1, 0);
+    for (uint32_t i = 0; i < numSurfaces; i++)
     {
-        Tmr::LinearSurfaceDescriptor desc = surface_table.GetDescriptor(i);
+        Tmr::LinearSurfaceDescriptor desc = surfaceTable.GetDescriptor(i);
         if (!desc.HasLimit())
         {
             patchPointsOffsets[i + 1] = patchPointsOffsets[i];
@@ -469,15 +469,15 @@ uint32_t SubdivisionSurface::SurfaceCount() const
 }
 
 void SubdivisionSurface::InitDeviceData(
-    const std::unique_ptr<const OpenSubdiv::Tmr::SurfaceTable>& surface_table,
+    const std::unique_ptr<const OpenSubdiv::Tmr::SurfaceTable>& surfaceTable,
     nvrhi::ICommandList* commandList)
 {
-    const uint32_t n_surfaces = surface_table->GetNumSurfaces();
-    std::vector<uint32_t> patchPointsOffsets(n_surfaces + 1, 0);
-    for (uint32_t iSurface = 0; iSurface < n_surfaces; ++iSurface)
+    const uint32_t numSurfaces = surfaceTable->GetNumSurfaces();
+    std::vector<uint32_t> patchPointsOffsets(numSurfaces + 1, 0);
+    for (uint32_t iSurface = 0; iSurface < numSurfaces; ++iSurface)
     {
         const Tmr::SurfaceDescriptor surface =
-            surface_table->descriptors[iSurface];
+            surfaceTable->descriptors[iSurface];
         if (!surface.HasLimit())
         {
             patchPointsOffsets[iSurface + 1] = patchPointsOffsets[iSurface];
@@ -485,7 +485,7 @@ void SubdivisionSurface::InitDeviceData(
         }
 
         // plan is never going to be null here
-        const auto* plan = surface_table->topologyMap.GetSubdivisionPlan(
+        const auto* plan = surfaceTable->topologyMap.GetSubdivisionPlan(
             surface.GetSubdivisionPlanIndex());
 
         patchPointsOffsets[iSurface + 1] =
@@ -494,10 +494,10 @@ void SubdivisionSurface::InitDeviceData(
 
     m_vertexDeviceData.surfaceDescriptors =
         CreateAndUploadBuffer<Tmr::SurfaceDescriptor>(
-            surface_table->descriptors, "surface descriptors", commandList);
+            surfaceTable->descriptors, "surface descriptors", commandList);
 
     m_vertexDeviceData.controlPointIndices = CreateAndUploadBuffer<Vtr::Index>(
-        surface_table->controlPointIndices, "control point indices", commandList);
+        surfaceTable->controlPointIndices, "control point indices", commandList);
 
     m_vertexDeviceData.patchPoints = CreateBuffer(patchPointsOffsets.back(), sizeof(float3), "patch points", commandList->getDevice());
 
