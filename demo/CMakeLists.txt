@@ -41,7 +41,7 @@ option(RTXMG_DEV_FEATURES "Enable development features (debugging, etc)" OFF)
 if(RTXMG_DEV_FEATURES)
     target_compile_definitions(${app} PUBLIC RTXMG_DEV_FEATURES=1)
 endif()
-
+target_compile_definitions(${app} PUBLIC RTXMG_VERSION="${PROJECT_VERSION}")
 
 if(ENABLE_AUDIO_ENGINE)
     if(TARGET audio_engine)

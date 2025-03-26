@@ -41,7 +41,7 @@ extern "C" {
 
 using namespace donut;
 
-const char* UIData::WindowTitle = "RTX Mega Geometry";
+const char* UIData::WindowTitle = "RTX Mega Geometry (" RTXMG_VERSION ")";
 
 int main(int argc, const char** argv)
 {
