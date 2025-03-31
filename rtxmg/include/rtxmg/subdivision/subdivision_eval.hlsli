@@ -61,7 +61,7 @@ struct SubdivisionEvaluatorHLSL
     // SubdivisionPlanContext
     StructuredBuffer<SubdivisionPlanHLSL> m_plans;
     StructuredBuffer<uint32_t> m_subpatchTrees;
-    StructuredBuffer<Index> m_patchPointsIndices;
+    StructuredBuffer<Index> m_vertexPatchPointIndices;
     StructuredBuffer<float> m_stencilMatrix;
     
     // Subdivision Surface data
@@ -80,7 +80,7 @@ struct SubdivisionEvaluatorHLSL
         SubdivisionPlanContext context = (SubdivisionPlanContext)0;
         context.m_data = m_plans[GetSurfaceDesc().GetSubdivisionPlanIndex()];
         context.m_subpatchTrees = m_subpatchTrees;
-        context.m_patchPoints = m_patchPointsIndices;
+        context.m_patchPoints = m_vertexPatchPointIndices;
         context.m_stencilMatrix = m_stencilMatrix;
         return context;
     }
@@ -272,7 +272,7 @@ struct SubdivisionEvaluatorHLSL
         for (int j = 0; j < 4; ++j)
         {
             const int iWeight = 4 * i + j;
-            Index patchPointIndex = m_patchPointsIndices[plan.m_data.patchPointsOffset + iPatchPtBase + iWeight];
+            Index patchPointIndex = m_vertexPatchPointIndices[plan.m_data.patchPointsOffset + iPatchPtBase + iWeight];
             Index cpi = m_vertexControlPointIndices[desc.firstControlPoint + patchPointIndex];
             float3 vtx = m_vertexControlPoints[cpi]; // regular face
 
@@ -439,86 +439,126 @@ struct DynamicSubdivisionEvaluatorHLSL : SubdivisionEvaluatorHLSL
     }
 };
 
-inline void EvalLinearBasis(float u, float v, out float weights[4], out float duWeights[4], out float dvWeights[4])
+struct TexcoordEvaluatorHLSL
 {
-    weights[0] = (1.0f - u) * (1.0f - v);
-    weights[1] = u * (1.0f - v);
-    weights[2] = u * v;
-    weights[3] = (1.0f - u) * v;
-
-    duWeights[0] = (-1.0f + v);
-    duWeights[1] = (1.0f - v);
-    duWeights[2] = v;
-    duWeights[3] = -v;
-
-    dvWeights[0] = (-1.0f + u);
-    dvWeights[1] = (-u);
-    dvWeights[2] = u;
-    dvWeights[3] = (1.0f - u);
-}
-
-inline Index GetPatchPoint(int pointIndex, uint16_t faceSize, LocalIndex subfaceIndex) 
-{
-    if (subfaceIndex == LOCAL_INDEX_INVALID)
+    StructuredBuffer<LinearSurfaceDescriptor> m_surfaceDescriptors;
+    StructuredBuffer<Index> m_texcoordControlPointIndices;
+    StructuredBuffer<uint32_t> m_texcoordPatchPointsOffsets;
+    TEXCOORD_PATCH_POINTS_TYPE m_texcoordPatchPoints;
+    StructuredBuffer<float2> m_texcoordControlPoints;
+    
+    void EvalLinearBasis(float u, float v, out float weights[4], out float duWeights[4], out float dvWeights[4])
     {
-        assert(pointIndex < faceSize);
-        return pointIndex;
+        weights[0] = (1.0f - u) * (1.0f - v);
+        weights[1] = u * (1.0f - v);
+        weights[2] = u * v;
+        weights[3] = (1.0f - u) * v;
+
+        duWeights[0] = (-1.0f + v);
+        duWeights[1] = (1.0f - v);
+        duWeights[2] = v;
+        duWeights[3] = -v;
+
+        dvWeights[0] = (-1.0f + u);
+        dvWeights[1] = (-u);
+        dvWeights[2] = u;
+        dvWeights[3] = (1.0f - u);
     }
-    else
+
+    Index GetPatchPoint(int pointIndex, uint16_t faceSize, LocalIndex subfaceIndex)
     {
-        assert(pointIndex < 4);
-        // patch point indices layout (N = faceSize) :
-        // [ N control points ]
-        // [ 1 face-point ]
-        // [ N edge-points ]
-        int N = faceSize;
-        switch (pointIndex)
+        if (subfaceIndex == LOCAL_INDEX_INVALID)
         {
-        case 0:
-            return subfaceIndex;
-        case 1:
-            return N + 1 + subfaceIndex;  // edge-point after
-        case 2:
-            return N;  // central face-point
-        case 3:
-            return N + (subfaceIndex > 0 ? subfaceIndex : N);
-        }
-    }
-    return INDEX_INVALID;
-}
-
-
-void EvaluateLinearSubd(StructuredBuffer<LinearSurfaceDescriptor> surfaceDescriptors,
-    StructuredBuffer<Index> controlPointIndices,
-    StructuredBuffer<uint32_t> patchPointsOffsets,
-    TEXCOORD_PATCH_POINTS_TYPE patchPoints,
-    StructuredBuffer<float2> controlPoints,
-    out TexCoordLimitFrame limit, float2 uv, uint32_t iSurface)
-{ 
-    LinearSurfaceDescriptor desc = surfaceDescriptors[iSurface];
-
-    const uint16_t faceSize = desc.GetFaceSize();
-    LocalIndex subface = desc.GetQuadSubfaceIndex();
-
-    float pointWeights[4], duWeights[4], dvWeights[4];
-    EvalLinearBasis(uv.x, uv.y, pointWeights, duWeights, dvWeights);
-
-    limit.Clear();
- 
-    for (int k = 0; k < 4; ++k)
-    {
-        Index patchPointIndex = GetPatchPoint(k, faceSize, subface);
-                
-        if (patchPointIndex < faceSize)
-        {
-            limit.AddWithWeight(controlPoints[controlPointIndices[desc.firstControlPoint + patchPointIndex]], pointWeights[k], duWeights[k], dvWeights[k]);
+            assert(pointIndex < faceSize);
+            return pointIndex;
         }
         else
         {
-            uint32_t supportOffset = patchPointsOffsets[iSurface];
-            limit.AddWithWeight(patchPoints[supportOffset + patchPointIndex - faceSize], pointWeights[k], duWeights[k], dvWeights[k]);
+            assert(pointIndex < 4);
+            // patch point indices layout (N = faceSize) :
+            // [ N control points ]
+            // [ 1 face-point ]
+            // [ N edge-points ]
+            int N = faceSize;
+            switch (pointIndex)
+            {
+                case 0:
+                    return subfaceIndex;
+                case 1:
+                    return N + 1 + subfaceIndex; // edge-point after
+                case 2:
+                    return N; // central face-point
+                case 3:
+                    return N + (subfaceIndex > 0 ? subfaceIndex : N);
+            }
+        }
+        return INDEX_INVALID;
+    }
+    
+#ifdef PATCH_POINTS_WRITEABLE
+    void WaveEvaluateTexCoordPatchPoints(uint3 threadIdx, uint32_t iSurface)
+    {
+        LinearSurfaceDescriptor desc = m_surfaceDescriptors[iSurface];
+        LocalIndex subface = desc.GetQuadSubfaceIndex();
+
+        if (subface == LOCAL_INDEX_INVALID)
+            return;
+
+        uint16_t faceSize = desc.GetFaceSize();
+        float2 center = (threadIdx.x < faceSize) ?
+            m_texcoordControlPoints[m_texcoordControlPointIndices[desc.firstControlPoint + threadIdx.x]] : 
+            float2(0, 0);
+
+        for (int offset = 16; offset > 0; offset /= 2)
+        {
+            center.x += WaveReadLaneAt(center.x, WaveGetLaneIndex() + offset);
+            center.y += WaveReadLaneAt(center.y, WaveGetLaneIndex() + offset);
+        }
+
+        if (threadIdx.x == 0)
+        {
+            m_texcoordPatchPoints[m_texcoordPatchPointsOffsets[iSurface] + 0] = center / faceSize;
+        }
+
+        if (threadIdx.x < faceSize)
+        {
+            float2 a = m_texcoordControlPoints[m_texcoordControlPointIndices[desc.firstControlPoint + threadIdx.x]];
+            float2 b = m_texcoordControlPoints[m_texcoordControlPointIndices[desc.firstControlPoint + (threadIdx.x + 1) % faceSize]];
+            m_texcoordPatchPoints[m_texcoordPatchPointsOffsets[iSurface] + threadIdx.x + 1] = 0.5f * (a + b);
         }
     }
-}
+#endif
+    
+    TexCoordLimitFrame EvaluateLinearSubd(float2 uv, uint32_t iSurface)
+    {
+        TexCoordLimitFrame limit;
+        limit.Clear();
+    
+        LinearSurfaceDescriptor desc = m_surfaceDescriptors[iSurface];
+
+        const uint16_t faceSize = desc.GetFaceSize();
+        LocalIndex subface = desc.GetQuadSubfaceIndex();
+
+        float pointWeights[4], duWeights[4], dvWeights[4];
+        EvalLinearBasis(uv.x, uv.y, pointWeights, duWeights, dvWeights);
+        
+        for (int k = 0; k < 4; ++k)
+        {
+            Index patchPointIndex = GetPatchPoint(k, faceSize, subface);
+                
+            if (patchPointIndex < faceSize)
+            {
+                limit.AddWithWeight(m_texcoordControlPoints[m_texcoordControlPointIndices[desc.firstControlPoint + patchPointIndex]], pointWeights[k], duWeights[k], dvWeights[k]);
+            }
+            else
+            {
+                uint32_t supportOffset = m_texcoordPatchPointsOffsets[iSurface];
+                limit.AddWithWeight(m_texcoordPatchPoints[supportOffset + patchPointIndex - faceSize], pointWeights[k], duWeights[k], dvWeights[k]);
+            }
+        }
+        
+        return limit;
+    }
+};
 
 #endif // SUBDIVISION_EVAL_HLSLI

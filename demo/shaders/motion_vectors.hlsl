@@ -69,7 +69,7 @@ static DynamicSubdivisionEvaluatorHLSL MakeDynamicSubdivisionEvaluator(SubdInsta
     result.m_plans = ResourceDescriptorHeap[NonUniformResourceIndex(subdInstance.plansBindlessIndex)];
     result.m_stencilMatrix = ResourceDescriptorHeap[NonUniformResourceIndex(subdInstance.stencilMatrixBindlessIndex)];
     result.m_subpatchTrees = ResourceDescriptorHeap[NonUniformResourceIndex(subdInstance.subpatchTreesBindlessIndex)];
-    result.m_patchPointsIndices = ResourceDescriptorHeap[NonUniformResourceIndex(subdInstance.patchPointIndicesBindlessIndex)];
+    result.m_vertexPatchPointIndices = ResourceDescriptorHeap[NonUniformResourceIndex(subdInstance.patchPointIndicesBindlessIndex)];
     result.m_surfaceDescriptors = ResourceDescriptorHeap[NonUniformResourceIndex(subdInstance.vertexSurfaceDescriptorBindlessIndex)];
     result.m_vertexControlPointIndices = ResourceDescriptorHeap[NonUniformResourceIndex(subdInstance.vertexControlPointIndicesBindlessIndex)];
     result.m_vertexControlPoints = ResourceDescriptorHeap[NonUniformResourceIndex(subdInstance.positionsBindlessIndex)];

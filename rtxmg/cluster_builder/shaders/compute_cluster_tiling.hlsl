@@ -331,12 +331,13 @@ float CalculateEdgeVisibility(float visibility, uint32_t waveSampleOffset, uint3
 #endif
 }
 
-void WaveEvaluateBSplinePatch8(SubdivisionEvaluatorHLSL subd, uint3 threadIdx, uint32_t waveSampleOffset)
+void WaveEvaluateBSplinePatch8(SubdivisionEvaluatorHLSL subd, 
+    TexcoordEvaluatorHLSL texcoordEval,
+    uint3 threadIdx, uint32_t waveSampleOffset)
 {
     const int iLane = threadIdx.x;
 
     // always do the non-displaced evaluation first.  Displacement maps will perturb this calculation below
-    
     if (subd.IsPureBSplinePatch())
     {
         LimitFrame limit = subd.WaveEvaluatePureBsplinePatch8(iLane);
@@ -361,7 +362,8 @@ void WaveEvaluateBSplinePatch8(SubdivisionEvaluatorHLSL subd, uint3 threadIdx, u
             samples[waveSampleOffset + iLane] = limit;
         }
     }
-    
+
+
 #if DISPLACEMENT_MAPS
     uint32_t geometryIndex = t_SurfaceToGeometryIndex[subd.m_surfaceIndex] + g_Params.firstGeometryIndex;
     GeometryData geometry = t_GeometryData[geometryIndex];
@@ -373,52 +375,13 @@ void WaveEvaluateBSplinePatch8(SubdivisionEvaluatorHLSL subd, uint3 threadIdx, u
     Texture2D displacementTex = t_BindlessTextures[displacementTexIndex];
     if (iLane < kNumWaveSurfaceUVSamples)
     {
-        LimitFrame displaced = DoDisplacement(t_TexCoordSurfaceDescriptors,
-                t_TexCoordControlPointIndices, t_TexCoordPatchPointsOffsets,
-                u_TexCoordPatchPoints, t_TexCoords,
+        LimitFrame displaced = DoDisplacement(texcoordEval,
             samples[waveSampleOffset + iLane], subd.m_surfaceIndex, kWaveSurfaceUVSamples[iLane],
             displacementTex,
             s_DisplacementSampler, displacementScale);
         samples[waveSampleOffset + iLane] = displaced;
     }
 #endif
-}
-
-void WaveEvaluateTexCoordPatchPoints(uint3 threadIdx,
-    StructuredBuffer<LinearSurfaceDescriptor> surfaceDescriptors,
-    StructuredBuffer<Index> controlPointIndices,
-    StructuredBuffer<uint32_t> patchPointsOffsets,
-    TEXCOORD_PATCH_POINTS_TYPE patchPoints,
-    StructuredBuffer<float2> controlPoints,
-    uint32_t iSurface)
-{
-    LinearSurfaceDescriptor desc = surfaceDescriptors[iSurface];
-    LocalIndex subface = desc.GetQuadSubfaceIndex();
-
-    if (subface == LOCAL_INDEX_INVALID)
-        return;
-
-    uint16_t faceSize = desc.GetFaceSize();
-    float2 center = (threadIdx.x < faceSize) ?
-        controlPoints[controlPointIndices[desc.firstControlPoint + threadIdx.x]] : float2(0, 0);
-
-    for (int offset = 16; offset > 0; offset /= 2)
-    {
-        center.x += WaveReadLaneAt(center.x, WaveGetLaneIndex() + offset);
-        center.y += WaveReadLaneAt(center.y, WaveGetLaneIndex() + offset);
-    }
-
-    if (threadIdx.x == 0)
-    {
-        patchPoints[patchPointsOffsets[iSurface] + 0] = center / faceSize;
-    }
-
-    if (threadIdx.x < faceSize)
-    {
-        float2 a = controlPoints[controlPointIndices[desc.firstControlPoint + threadIdx.x]];
-        float2 b = controlPoints[controlPointIndices[desc.firstControlPoint + (threadIdx.x + 1) % faceSize]];
-        patchPoints[patchPointsOffsets[iSurface] + threadIdx.x + 1] = 0.5f * (a + b);
-    }
 }
 
 float CalculateEdgeRates(LimitFrame limitFrame)
@@ -677,7 +640,7 @@ void main(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
     subd.m_surfaceDescriptors = t_VertexSurfaceDescriptors;
     subd.m_plans = t_Plans;
     subd.m_subpatchTrees = t_SubpatchTrees;
-    subd.m_patchPointsIndices = t_PatchPointIndices;
+    subd.m_vertexPatchPointIndices = t_PatchPointIndices;
     subd.m_stencilMatrix = t_StencilMatrix;
 
     subd.m_vertexControlPointIndices = t_VertexControlPointIndices;
@@ -685,10 +648,13 @@ void main(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
     subd.m_vertexPatchPointsOffsets = t_VertexPatchPointsOffsets;
     subd.m_vertexPatchPoints = u_VertexPatchPoints;
 
-    WaveEvaluateTexCoordPatchPoints(threadIdx,
-        t_TexCoordSurfaceDescriptors, t_TexCoordControlPointIndices,
-        t_TexCoordPatchPointsOffsets, u_TexCoordPatchPoints, t_TexCoords,
-        iSurface);
+    TexcoordEvaluatorHLSL texcoordEval;
+    texcoordEval.m_surfaceDescriptors = t_TexCoordSurfaceDescriptors;
+    texcoordEval.m_texcoordControlPointIndices = t_TexCoordControlPointIndices;
+    texcoordEval.m_texcoordPatchPointsOffsets = t_TexCoordPatchPointsOffsets;
+    texcoordEval.m_texcoordPatchPoints = u_TexCoordPatchPoints;
+    texcoordEval.m_texcoordControlPoints = t_TexCoords;
+    texcoordEval.WaveEvaluateTexCoordPatchPoints(threadIdx, iSurface);
 
     // Frustum "culling"
     float visibility = CalculateVisibility(subd, threadIdx);
@@ -711,7 +677,7 @@ void main(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
     //
 
     uint32_t waveSampleOffset = kNumWaveSurfaceUVSamples * iWave;
-    WaveEvaluateBSplinePatch8(subd, threadIdx, waveSampleOffset);
+    WaveEvaluateBSplinePatch8(subd, texcoordEval, threadIdx, waveSampleOffset);
 
     const float tessFactor = g_Params.coarseTessellationRate / g_Params.fineTessellationRate;
 

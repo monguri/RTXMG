@@ -62,7 +62,7 @@ StructuredBuffer<LinearSurfaceDescriptor> t_TexCoordSurfaceDescriptors : registe
 StructuredBuffer<Index> t_TexCoordControlPointIndices : register(t16);
 StructuredBuffer<uint32_t> t_TexCoordPatchPointsOffsets : register(t17);
 StructuredBuffer<float2> t_TexCoordPatchPoints : register(t18);
-StructuredBuffer<float2> t_SubdTexCoords : register(t19);
+StructuredBuffer<float2> t_TexCoords : register(t19);
 
 // Buffers for the gatherer
 RWStructuredBuffer<float3> u_ClusterVertexPositions : register(u0);
@@ -104,7 +104,7 @@ void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_Gr
     subd.m_surfaceDescriptors = t_VertexSurfaceDescriptors;
     subd.m_plans = t_Plans;
     subd.m_subpatchTrees = t_SubpatchTrees;
-    subd.m_patchPointsIndices = t_PatchPointIndices;
+    subd.m_vertexPatchPointIndices = t_PatchPointIndices;
     subd.m_stencilMatrix = t_StencilMatrix;
 
     subd.m_vertexControlPointIndices = t_VertexControlPointIndices;
@@ -113,6 +113,13 @@ void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_Gr
     subd.m_vertexPatchPoints = t_VertexPatchPoints;
 
 #if DISPLACEMENT_MAPS
+    TexcoordEvaluatorHLSL texcoordEval;
+    texcoordEval.m_surfaceDescriptors = t_TexCoordSurfaceDescriptors;
+    texcoordEval.m_texcoordControlPointIndices = t_TexCoordControlPointIndices;
+    texcoordEval.m_texcoordPatchPointsOffsets = t_TexCoordPatchPointsOffsets;
+    texcoordEval.m_texcoordPatchPoints = t_TexCoordPatchPoints;
+    texcoordEval.m_texcoordControlPoints = t_TexCoords;
+
     float displacementScale;
     int displacementTexIndex;
 
@@ -134,9 +141,7 @@ void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_Gr
             LimitFrame limit = subd.Evaluate(uv);
 
 #if DISPLACEMENT_MAPS
-            limit = DoDisplacement(t_TexCoordSurfaceDescriptors,
-                        t_TexCoordControlPointIndices, t_TexCoordPatchPointsOffsets,
-                        t_TexCoordPatchPoints, t_SubdTexCoords,
+            limit = DoDisplacement(texcoordEval,
                         limit, iSurface, uv,
                         displacementTex,
                         s_DisplacementSampler, displacementScale);
@@ -168,11 +173,14 @@ void FillClustersTexcoordsMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupId
     // uvs can be added back.
     const float2 kSurfaceUVs[4] = { { 0, 0 }, { 1, 0 }, { 1, 1 }, { 0, 1 } };
 
-    TexCoordLimitFrame texcoord;
+    TexcoordEvaluatorHLSL texcoordEval;
+    texcoordEval.m_surfaceDescriptors = t_TexCoordSurfaceDescriptors;
+    texcoordEval.m_texcoordControlPointIndices = t_TexCoordControlPointIndices;
+    texcoordEval.m_texcoordPatchPointsOffsets = t_TexCoordPatchPointsOffsets;
+    texcoordEval.m_texcoordPatchPoints = t_TexCoordPatchPoints;
+    texcoordEval.m_texcoordControlPoints = t_TexCoords;
 
-    EvaluateLinearSubd(t_TexCoordSurfaceDescriptors,
-        t_TexCoordControlPointIndices, t_TexCoordPatchPointsOffsets, t_TexCoordPatchPoints, t_SubdTexCoords,
-        texcoord, kSurfaceUVs[threadIdx.y], iSurface);
+    TexCoordLimitFrame texcoord = texcoordEval.EvaluateLinearSubd(kSurfaceUVs[threadIdx.y], iSurface);
 
     GathererWriteTexcoord(texcoord, clusterIndex, threadIdx.y);
 }

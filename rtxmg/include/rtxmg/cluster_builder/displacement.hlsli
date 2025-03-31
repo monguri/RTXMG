@@ -40,11 +40,7 @@ void GetDisplacement(MaterialConstants material,
     }
 }
 
-LimitFrame DoDisplacement(StructuredBuffer<LinearSurfaceDescriptor> surfaceDescriptors,
-    StructuredBuffer<Index> controlPointIndices,
-    StructuredBuffer<uint32_t> patchPointsOffsets,
-    TEXCOORD_PATCH_POINTS_TYPE patchPoints,
-    StructuredBuffer<float2> controlPoints, 
+LimitFrame DoDisplacement(TexcoordEvaluatorHLSL texcoordEval,
     LimitFrame limit,
     uint32_t iSurface,
     float2 uv,
@@ -58,14 +54,11 @@ LimitFrame DoDisplacement(StructuredBuffer<LinearSurfaceDescriptor> surfaceDescr
     }
         
     // compute subd limit and normal
-    const float3 normal = normalize( cross( limit.deriv1, limit.deriv2 ) );
+    const float3 normal = normalize(cross(limit.deriv1, limit.deriv2));
 
-    TexCoordLimitFrame texcoord;
-    
-    EvaluateLinearSubd(surfaceDescriptors, controlPointIndices, patchPointsOffsets,
-        patchPoints, controlPoints, texcoord, uv, iSurface);
+    TexCoordLimitFrame texcoord = texcoordEval.EvaluateLinearSubd(uv, iSurface);
         
-    float displacement = displacementTex.SampleLevel( dispSampler, texcoord.uv, 0 ).r;
+    float displacement = displacementTex.SampleLevel(dispSampler, texcoord.uv, 0).r;
     
     const float2 dsdt = float2(1.0f / 1024, 1.0f / 1024);
     // compute derivatives of displacement map, (dD/du) and (dD/dv) from finite differences:
