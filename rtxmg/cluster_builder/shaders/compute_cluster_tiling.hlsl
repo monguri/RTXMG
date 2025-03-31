@@ -35,6 +35,14 @@
 #define PATCH_POINTS_WRITEABLE
 #define SUBDIVISION_PLAN_UNROLL [unroll]
 
+// Group atomics is significantly faster by reducing pressure on the global atomic
+// This reduces the global atomic by a factor of 4 (kComputeClusterTilingWavesPerSurface)
+#define ENABLE_GROUP_ATOMICS 1
+
+// Wave intrinsics do not appear to make any difference in performance
+// This is most likely since we use the same number of registers (otherwise we pay for local data stores/reads)
+#define ENABLE_WAVE_INTRINSICS 0
+
 #include <donut/shaders/material_cb.h>
 #include <donut/shaders/binding_helpers.hlsli>
 #include <donut/shaders/bindless.h>
@@ -93,10 +101,22 @@ SamplerState s_HizSampler : register(s1);
 VK_BINDING(1, 1) Texture2D t_BindlessTextures[] : register(t0, space2);
 Texture2D<float> t_HiZBuffer[HIZ_MAX_LODS]: register(t0, space3);
 
-
 const static uint32_t nSamples = kComputeClusterTilingWavesPerSurface * kNumWaveSurfaceUVSamples;
 groupshared LimitFrame samples[nSamples];
 static uint g_debugOutputSlot = 0;
+
+#if ENABLE_GROUP_ATOMICS
+groupshared uint32_t s_clusters;
+groupshared uint32_t s_vertices;
+groupshared uint32_t s_clasBlocks;
+groupshared uint32_t s_triangles;
+
+groupshared uint32_t s_groupClasBlocksOffset;
+groupshared uint32_t s_groupClusterOffset;
+groupshared uint32_t s_groupVertexOffset;
+
+groupshared bool s_allocationSucceeded;
+#endif
 
 bool HasLimit(uint32_t iSurface)
 {
@@ -363,7 +383,6 @@ void WaveEvaluateBSplinePatch8(SubdivisionEvaluatorHLSL subd,
         }
     }
 
-
 #if DISPLACEMENT_MAPS
     uint32_t geometryIndex = t_SurfaceToGeometryIndex[subd.m_surfaceIndex] + g_Params.firstGeometryIndex;
     GeometryData geometry = t_GeometryData[geometryIndex];
@@ -474,7 +493,8 @@ void GathererWriteCluster(Cluster cluster, uint32_t clusterIndex, GridSampler gr
 void WriteSurfaceWave(uint3 threadIdx, uint3 groupIdx, uint32_t iSurface, uint16_t edgeSegments, uint32_t waveSampleOffset)
 {
     // PatchGatherer
-    const int iLane = threadIdx.x;
+    const uint iLane = threadIdx.x;
+    const uint iWave = threadIdx.y;
 
     GridSampler rSampler;
     rSampler.edgeSegments[0] = WaveReadLaneAt(edgeSegments, 0);
@@ -490,15 +510,14 @@ void WriteSurfaceWave(uint3 threadIdx, uint3 groupIdx, uint32_t iSurface, uint16
     uint16_t2 surfaceSize = rSampler.GridSize();
     SurfaceTiling surfaceTiling = MakeSurfaceTiling(surfaceSize);
 
-    // Get the amount of sizes to enable the templates
-    // Wave intrinsics appear to use local data loads for subTilings array due to dynamic access
-    // This appears to cause long scoreboards waiting for local data loads.
-#define ENABLE_USE_WAVE_INTRINSICS 0
-#if ENABLE_USE_WAVE_INTRINSICS
-    _Static_assert(SurfaceTiling::N_SUB_TILINGS <= kComputeClusterTilingThreadsX, "Must have enough lanes to use wave ops");
-    uint32_t clasBlocks = 0;
+
     uint32_t clusterCount = 0;
     uint32_t vertexCount = 0;
+    uint32_t clasBlocks = 0;
+    uint32_t clusterTris = 0;
+    
+#if ENABLE_WAVE_INTRINSICS
+    _Static_assert(SurfaceTiling::N_SUB_TILINGS <= kComputeClusterTilingThreadsX, "Must have enough lanes to use wave ops");
     if (iLane < SurfaceTiling::N_SUB_TILINGS)
     {
         ClusterTiling clusterTiling = surfaceTiling.subTilings[iLane];
@@ -525,11 +544,8 @@ void WriteSurfaceWave(uint3 threadIdx, uint3 groupIdx, uint32_t iSurface, uint16
     // compute cluster and vertex offsets into linear storage using global counters
     uint32_t surfaceClusterOffset, surfaceVertexOffset, clasBlocksOffset;
     if (iLane == 0)
-    {   
-#if !ENABLE_USE_WAVE_INTRINSICS
-        uint32_t clusterCount = 0;
-        uint32_t vertexCount = 0;
-        uint32_t clasBlocks = 0;
+    {
+#if !ENABLE_WAVE_INTRINSICS
         [unroll]
         for (uint16_t iTiling = 0; iTiling < surfaceTiling.N_SUB_TILINGS; ++iTiling)
         {
@@ -543,9 +559,59 @@ void WriteSurfaceWave(uint3 threadIdx, uint3 groupIdx, uint32_t iSurface, uint16
             clasBlocks += (t_ClasInstantiationBytes[templateIndex] / nvrhi::rt::cluster::kClasByteAlignment) * tilingClusterCount;
         }
 #endif
-        uint32_t clusterTris = 2 * (uint32_t)surfaceSize.x * (uint32_t)surfaceSize.y;
-        uint32_t dummy;
+        clusterTris = 2 * (uint32_t)surfaceSize.x * (uint32_t)surfaceSize.y;
+    }
 
+#if ENABLE_GROUP_ATOMICS
+    uint32_t waveClasBlocksOffset, waveSurfaceClusterOffset, waveSurfaceVertexOffset;
+    if (iLane == 0)
+    {
+        // Coalesce waves into group shared memory
+        uint32_t dummy;
+        InterlockedAdd(s_clasBlocks, clasBlocks, waveClasBlocksOffset);
+        InterlockedAdd(s_clusters, clusterCount, waveSurfaceClusterOffset);
+        InterlockedAdd(s_vertices, vertexCount, waveSurfaceVertexOffset);
+        InterlockedAdd(s_triangles, clusterTris, dummy);
+    
+        GroupMemoryBarrierWithGroupSync();
+    
+        // 1 global atomic per thread group
+        if (iWave == 0)
+        {
+            uint32_t dummy;
+            InterlockedAdd(u_TessellationCounters[0].desiredClasBlocks, s_clasBlocks, s_groupClasBlocksOffset);
+            InterlockedAdd(u_TessellationCounters[0].desiredClusters, s_clusters, s_groupClusterOffset);
+            InterlockedAdd(u_TessellationCounters[0].desiredVertices, s_vertices, s_groupVertexOffset);
+            InterlockedAdd(u_TessellationCounters[0].desiredTriangles, s_triangles, dummy);
+
+            allocationSucceeded = ((s_groupClasBlocksOffset + s_clasBlocks) <= g_Params.maxClasBlocks) &&
+                ((s_groupClusterOffset + s_clusters) <= g_Params.maxClusters) &&
+                ((s_groupVertexOffset + s_vertices) <= g_Params.maxVertices);
+
+            // If we passed all allocations increment the real cluster counter.
+            // This code used to track allocated clasBlocks, vertices, triangles 
+            // but atomics are expensive and it doubled the number of stalls on atomics
+            if (allocationSucceeded)
+            {
+                InterlockedAdd(u_TessellationCounters[0].clusters, s_clusters, s_groupClusterOffset);
+            }
+
+            // write back global offset
+            s_allocationSucceeded = allocationSucceeded;
+        }
+
+        GroupMemoryBarrierWithGroupSync();
+
+        // Read back to each wave
+        clasBlocksOffset = s_groupClasBlocksOffset + waveClasBlocksOffset;
+        surfaceClusterOffset = s_groupClusterOffset + waveSurfaceClusterOffset;
+        surfaceVertexOffset = s_groupVertexOffset + waveSurfaceVertexOffset;
+        allocationSucceeded = s_allocationSucceeded;
+    }
+#else
+    if (iLane == 0)
+    {
+        uint32_t dummy;
         InterlockedAdd(u_TessellationCounters[0].desiredClasBlocks, clasBlocks, clasBlocksOffset);
         InterlockedAdd(u_TessellationCounters[0].desiredClusters, clusterCount, surfaceClusterOffset);
         InterlockedAdd(u_TessellationCounters[0].desiredVertices, vertexCount, surfaceVertexOffset);
@@ -563,6 +629,7 @@ void WriteSurfaceWave(uint3 threadIdx, uint3 groupIdx, uint32_t iSurface, uint16
             InterlockedAdd(u_TessellationCounters[0].clusters, clusterCount, surfaceClusterOffset);
         }
     }
+#endif
 
     allocationSucceeded = WaveReadLaneAt(allocationSucceeded, 0);
     if (!allocationSucceeded)
@@ -617,11 +684,23 @@ void WriteSurfaceWave(uint3 threadIdx, uint3 groupIdx, uint32_t iSurface, uint16
 [numthreads(kComputeClusterTilingThreadsX, kComputeClusterTilingWavesPerSurface, 1)]
 void main(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
 {
+    const uint32_t iLane = threadIdx.x;
     const uint32_t iWave = threadIdx.y;
     const uint32_t iSurface = kComputeClusterTilingWavesPerSurface * groupIdx.x + iWave;
 
-    uint numSurfaceDescriptors, surfaceDescriptorStride;
+#if ENABLE_GROUP_ATOMICS
+    if (iLane == 0 && iWave == 0)
+    {
+        s_clusters = 0;
+        s_vertices = 0;
+        s_clasBlocks = 0;
+        s_triangles = 0;
+        s_allocationSucceeded = false;
+    }
+    GroupMemoryBarrierWithGroupSync();
+#endif
 
+    uint numSurfaceDescriptors, surfaceDescriptorStride;
     t_VertexSurfaceDescriptors.GetDimensions(numSurfaceDescriptors, surfaceDescriptorStride);
 
     if (!(iSurface < numSurfaceDescriptors))

@@ -749,8 +749,6 @@ void ClusterAccelBuilder::ComputeInstanceClusterTiling(const SubdivisionSurface&
     const nvrhi::BufferRange& tessCounterRange,
     nvrhi::ICommandList* commandList)
 {
-    nvrhi::utils::ScopedMarker marker(commandList, "ClusterAccelBuilder::ComputeInstanceClusterTiling");
-
     ComputeClusterTilingParams params = {};
     params.matWorldToClip = m_tessellatorConfig.camera->GetProjectionMatrix() * m_tessellatorConfig.camera->GetViewMatrix();
     affineToColumnMajor(localToWorld, params.localToWorld.m_data); // params.localToWorld;
@@ -1126,6 +1124,7 @@ void ClusterAccelBuilder::BuildAccel(const RTXMGScene& scene, const TessellatorC
     commandList->clearBufferUInt(m_fillClustersDispatchIndirectBuffer, 0);
 
     {
+        nvrhi::utils::ScopedMarker marker(commandList, "ComputeClusterTiling");
         stats::clusterAccelSamplers.clusterTilingTime.Start(commandList);
         uint32_t surfaceOffset = 0;
         for (uint32_t i = 0; i < instances.size(); ++i)
