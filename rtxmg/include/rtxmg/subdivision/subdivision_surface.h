@@ -82,7 +82,6 @@ public:
     // 'vertex' limit interpolation surface-table ; see :
     // https://graphics.pixar.com/opensubdiv/docs/subdivision_surfaces.html#vertex-and-varying-data
     //
-
     SurfaceTableDeviceData m_vertexDeviceData;
 
     std::vector<nvrhi::BufferHandle> m_positionKeyframeBuffers;
@@ -104,6 +103,18 @@ public:
     donut::engine::DescriptorHandle m_positionsPrevDescriptor;
     donut::engine::DescriptorHandle m_surfaceToGeometryIndexDescriptor;   
 
+    // Surface Types
+    enum class SurfaceType : uint32_t
+    {
+        PureBSpline,
+        RegularBSpline,
+        Limit,
+        NoLimit,
+        Count
+    };
+    std::array<uint32_t, size_t(SurfaceType::Count)> m_surfaceOffsets;
+    uint32_t m_surfaceCount = 0;
+    
     bool m_hasDisplacementMaterial = false;
     donut::engine::DescriptorHandle m_topologyQualityDescriptor;
 
@@ -114,9 +125,7 @@ public:
 protected:
     TopologyMap const* m_topology_map = nullptr;
 
-    void InitDeviceData(
-        const std::unique_ptr<const OpenSubdiv::Tmr::SurfaceTable>& surface_table,
-        nvrhi::ICommandList* commandList);
+    void InitDeviceData(nvrhi::ICommandList* commandList);
 
     std::unique_ptr<Shape> m_shape;
 
