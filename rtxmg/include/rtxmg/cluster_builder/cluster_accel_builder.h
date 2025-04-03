@@ -33,7 +33,9 @@
 #include "rtxmg/cluster_builder/cluster_accels.h"
 #include "rtxmg/cluster_builder/tessellator_config.h"
 #include "rtxmg/cluster_builder/tessellation_counters.h"
+#include "rtxmg/cluster_builder/copy_cluster_offset_params.h"
 #include "rtxmg/cluster_builder/fill_blas_from_clas_args_params.h"
+
 #include "rtxmg/scene/model.h"
 #include "rtxmg/utils/buffer.h"
 
@@ -78,6 +80,118 @@ struct TemplateGrids
     uint32_t totalTriangles = 0;
 };
 
+enum class ShaderPermutationSurfaceType : uint32_t
+{
+    PureBSpline,
+    RegularBSpline,
+    Limit,
+    All,
+    Count
+};
+
+// Permutation definitions
+class ComputeClusterTilingPermutation
+{
+public:
+    static constexpr uint32_t kTessModeBitCount = 2;
+    static constexpr uint32_t kVisibilityBitCount = 1;
+    static constexpr uint32_t kSurfaceTypeBitCount = 2;
+    static_assert(uint32_t(ShaderPermutationSurfaceType::Count) <= (1u << kSurfaceTypeBitCount));
+
+    static_assert(uint32_t(TessellatorConfig::AdaptiveTessellationMode::COUNT) <= (1u << kTessModeBitCount));
+    static_assert(uint32_t(TessellatorConfig::VisibilityMode::COUNT) <= (1u << kVisibilityBitCount));
+
+    enum BitIndices : uint32_t
+    {
+        DisplacementMaps,
+        FrustumVisibility,
+        TessMode,
+        VisibilityMode = TessMode + kTessModeBitCount,
+        SurfaceTypeStartBit = VisibilityMode + kVisibilityBitCount,
+        Count = SurfaceTypeStartBit + kSurfaceTypeBitCount
+    };
+
+    static constexpr size_t kCount = 1u << BitIndices::Count;
+
+    ComputeClusterTilingPermutation(bool enableDisplacement,
+        bool enableFrustumVisibility,
+        TessellatorConfig::AdaptiveTessellationMode tessMode,
+        TessellatorConfig::VisibilityMode visMode,
+        ShaderPermutationSurfaceType surfaceType)
+        : m_bits
+        ((enableDisplacement ? (1u << BitIndices::DisplacementMaps) : 0u) 
+         | (enableFrustumVisibility ? (1u << BitIndices::FrustumVisibility) : 0u)
+         | (uint32_t(tessMode) << BitIndices::TessMode)
+         | (uint32_t(visMode) << BitIndices::VisibilityMode)
+         | (uint32_t(surfaceType) << BitIndices::SurfaceTypeStartBit))
+    {}
+
+    bool isDisplacementEnabled() const { return m_bits & (1u << BitIndices::DisplacementMaps); }
+    bool isFrustumVisibilityEnabled() const { return m_bits & (1u << BitIndices::FrustumVisibility); }
+
+    TessellatorConfig::AdaptiveTessellationMode tessellationMode() const
+    {
+        constexpr uint32_t kBitMask = (1 << kTessModeBitCount) - 1;
+        return TessellatorConfig::AdaptiveTessellationMode((m_bits >> BitIndices::TessMode) & kBitMask);
+    }
+
+    TessellatorConfig::VisibilityMode visibilityMode() const
+    {
+        constexpr uint32_t kBitMask = (1 << kVisibilityBitCount) - 1;
+        return TessellatorConfig::VisibilityMode((m_bits >> BitIndices::VisibilityMode) & kBitMask);
+    }
+
+    ShaderPermutationSurfaceType surfaceType() const
+    {
+        constexpr uint32_t kBitMask = (1 << kSurfaceTypeBitCount) - 1;
+        return ShaderPermutationSurfaceType((m_bits >> BitIndices::SurfaceTypeStartBit) & kBitMask);
+    }
+    void setSurfaceType(ShaderPermutationSurfaceType surfaceType)
+    {
+        constexpr uint32_t kBitMask = (1 << kSurfaceTypeBitCount) - 1;
+        m_bits &= ~(kBitMask << BitIndices::SurfaceTypeStartBit);
+        m_bits |= (uint32_t(surfaceType) << BitIndices::SurfaceTypeStartBit);
+    }
+
+    uint32_t index() const { return m_bits; }
+
+private:
+    uint32_t m_bits = 0;
+};
+
+class FillClustersPermutation
+{
+public:
+    static constexpr uint32_t kSurfaceTypeBitCount = 2;
+    static_assert(uint32_t(ShaderPermutationSurfaceType::Count) <= (1u << kSurfaceTypeBitCount));
+
+    enum BitIndices : uint32_t
+    {
+        DisplacementMaps = 0,
+        SurfaceTypeStartBit,
+        Count = SurfaceTypeStartBit + kSurfaceTypeBitCount
+    };
+    static constexpr size_t kCount = 1u << BitIndices::Count;
+    uint32_t index() const { return m_bits; }
+
+    FillClustersPermutation(bool enableDisplacement,
+        ShaderPermutationSurfaceType surfaceType)
+        : m_bits((enableDisplacement ? (1u << BitIndices::DisplacementMaps) : 0u)
+         | (uint32_t(surfaceType) << BitIndices::SurfaceTypeStartBit))
+    {}
+
+    bool isDisplacementEnabled() const { return m_bits & (1u << BitIndices::DisplacementMaps); }
+    ShaderPermutationSurfaceType surfaceType() const
+    {
+        constexpr uint32_t kBitMask = (1 << kSurfaceTypeBitCount) - 1;
+        return ShaderPermutationSurfaceType((m_bits >> BitIndices::SurfaceTypeStartBit) & kBitMask);
+    }
+
+private:
+    uint32_t m_bits = 0;
+};
+
+
 class ClusterAccelBuilder
 {
 public:
@@ -107,7 +221,8 @@ protected:
     // Calculates the cluster layout based off of various visibility metrics
     // A cluster tiling is the number of clusters and cluster sizes that are used to cover a surface.
     // Outputs cluster headers, shading data, and addresses
-    void ComputeInstanceClusterTiling(const SubdivisionSurface& subdivisionSurface,
+    void ComputeInstanceClusterTiling(uint32_t instanceIndex,
+        const SubdivisionSurface& subdivisionSurface,
         ClusterAccels& accels,
         uint32_t firstGeometryIndex,
         nvrhi::IBuffer* geometryBuffer,
@@ -118,93 +233,9 @@ protected:
         uint32_t surfaceCount, 
         const nvrhi::BufferRange& tessCounterRange,
         nvrhi::ICommandList* commandList);
-    void CopyClusterOffset(int instance_index, const nvrhi::BufferRange& tessCounterRange, nvrhi::ICommandList* commandList);
+    void CopyClusterOffset(uint32_t instanceIndex, ClusterDispatchType dispatchType,
+        const nvrhi::BufferRange& tessCounterRange, nvrhi::ICommandList* commandList);
 
-    // Permutation definitions
-    class ComputeClusterTilingPermutation
-    {
-    public:
-        static constexpr uint32_t kTessModeBitCount = 2;
-        static constexpr uint32_t kVisibilityBitCount = 1;
-
-        static_assert(uint32_t(TessellatorConfig::AdaptiveTessellationMode::COUNT) <= (1u << kTessModeBitCount));
-        static_assert(uint32_t(TessellatorConfig::VisibilityMode::COUNT) <= (1u << kVisibilityBitCount));
-
-        enum BitIndices : uint32_t
-        {
-            DisplacementMaps,
-            FrustumVisibility,
-            TessMode,
-            VisibilityMode = TessMode + kTessModeBitCount,
-            Count = VisibilityMode + kVisibilityBitCount
-        };
-
-        static constexpr size_t kCount = 1u << BitIndices::Count;
-
-        ComputeClusterTilingPermutation(bool enableDisplacement,
-            bool enableFrustumVisibility,
-            TessellatorConfig::AdaptiveTessellationMode tessMode,
-            TessellatorConfig::VisibilityMode visMode)
-            : m_bits
-            ((enableDisplacement ? (1u << BitIndices::DisplacementMaps) : 0u) |
-             (enableFrustumVisibility ? (1u << BitIndices::FrustumVisibility) : 0u) |
-             (uint32_t(tessMode) << BitIndices::TessMode) |
-             (uint32_t(visMode) << BitIndices::VisibilityMode))
-        {}
-
-        bool isDisplacementEnabled() const { return m_bits & (1u << BitIndices::DisplacementMaps); }
-        bool isFrustumVisibilityEnabled() const { return m_bits & (1u << BitIndices::FrustumVisibility); }
-
-        TessellatorConfig::AdaptiveTessellationMode tessellationMode() const
-        {
-            constexpr uint32_t kBitMask = (1 << kTessModeBitCount) - 1;
-            return TessellatorConfig::AdaptiveTessellationMode((m_bits >> BitIndices::TessMode) & kBitMask);
-        }
-
-        TessellatorConfig::VisibilityMode visibilityMode() const
-        {
-            constexpr uint32_t kBitMask = (1 << kVisibilityBitCount) - 1;
-            return TessellatorConfig::VisibilityMode((m_bits >> BitIndices::VisibilityMode) & kBitMask);
-        }
-
-        uint32_t index() const { return m_bits; }
-
-    private:
-        uint32_t m_bits = 0;
-    };
-
-    class FillClustersPermutation
-    {
-    public:
-        enum BitIndices : uint32_t
-        {
-            DisplacementMaps = 0,
-            Count
-        };
-        static constexpr size_t kCount = 1u << BitIndices::Count;
-        uint32_t index() const { return m_bits; }
-
-        FillClustersPermutation(bool enableDisplacement)
-        : m_bits((enableDisplacement ? (1u << BitIndices::DisplacementMaps) : 0u))
-        {}
-
-        bool isDisplacementEnabled() const { return m_bits & (1u << BitIndices::DisplacementMaps); }
-
-    private:
-        uint32_t m_bits = 0;
-    };
-
-
-    enum class IndirectArgsType : uint32_t
-    {
-        Clusters,
-        Instances,
-        NumTypes
-    };
-    uint32_t getIndirectArgCountBufferOffset(IndirectArgsType type) const
-    {
-        return uint32_t(type) * sizeof(uint32_t);
-    }
 protected:
     TessellatorConfig m_tessellatorConfig;
     donut::engine::ShaderFactory& m_shaderFactory;
@@ -234,7 +265,7 @@ protected:
     nvrhi::BindingLayoutHandle m_computeClusterTilingBL;
     nvrhi::BindingLayoutHandle m_computeClusterTilingHizBL;
     nvrhi::BindingLayoutHandle m_computeClusterTilingBindlessBL;
-    nvrhi::ComputePipelineHandle m_computeClusterTilingPatchPSOs[ComputeClusterTilingPermutation::kCount];
+    nvrhi::ComputePipelineHandle m_computeClusterTilingPSOs[ComputeClusterTilingPermutation::kCount];
     
     RTXMGBuffer<uint3> m_fillClustersDispatchIndirectBuffer; // number of thread groups per each instance
     RTXMGBuffer<uint2> m_clusterOffsetCountsBuffer; // offset+count per each instance

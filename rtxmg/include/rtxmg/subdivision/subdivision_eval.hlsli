@@ -27,6 +27,16 @@
 #include "rtxmg/subdivision/subdivision_plan_hlsl.h"
 #include "rtxmg/subdivision/vertex.h"
 
+// SURFACE_TYPE
+#define SURFACE_TYPE_PUREBSPLINE 0
+#define SURFACE_TYPE_REGULARBSPLINE 1
+#define SURFACE_TYPE_LIMIT 2
+#define SURFACE_TYPE_ALL 3
+
+#ifndef SURFACE_TYPE
+#define SURFACE_TYPE SURFACE_TYPE_ALL
+#endif
+
 #ifdef PATCH_POINTS_WRITEABLE // defined in the shader
 #define VERTEX_PATCH_POINTS_TYPE RWStructuredBuffer<float3>
 #define TEXCOORD_PATCH_POINTS_TYPE RWStructuredBuffer<float2>
@@ -177,12 +187,20 @@ struct SubdivisionEvaluatorHLSL
     
     LimitFrame Evaluate(float2 uv)
     {
+#if SURFACE_TYPE == SURFACE_TYPE_ALL
         if (IsPureBSplinePatch())
             return EvaluatePureBsplinePatch(uv);
         else if (IsBSplinePatch())
             return EvaluateBsplinePatch(uv);
         else
             return EvaluateLimitSurface(uv);
+#elif SURFACE_TYPE == SURFACE_TYPE_PUREBSPLINE
+        return EvaluatePureBsplinePatch(uv);
+#elif SURFACE_TYPE == SURFACE_TYPE_REGULARBSPLINE
+        return EvaluateBsplinePatch(uv);
+#elif SURFACE_TYPE == SURFACE_TYPE_LIMIT
+        return EvaluateLimitSurface(uv);
+#endif
     }
     
     float3 GetPureBsplinePatchPoint(uint32_t i, uint32_t j)
@@ -496,7 +514,7 @@ struct TexcoordEvaluatorHLSL
     }
     
 #ifdef PATCH_POINTS_WRITEABLE
-    void WaveEvaluateTexCoordPatchPoints(uint3 threadIdx, uint32_t iSurface)
+    void WaveEvaluateTexCoordPatchPoints(uint32_t iLane, uint32_t iSurface)
     {
         LinearSurfaceDescriptor desc = m_surfaceDescriptors[iSurface];
         LocalIndex subface = desc.GetQuadSubfaceIndex();
@@ -505,8 +523,8 @@ struct TexcoordEvaluatorHLSL
             return;
 
         uint16_t faceSize = desc.GetFaceSize();
-        float2 center = (threadIdx.x < faceSize) ?
-            m_texcoordControlPoints[m_texcoordControlPointIndices[desc.firstControlPoint + threadIdx.x]] : 
+        float2 center = (iLane < faceSize) ?
+            m_texcoordControlPoints[m_texcoordControlPointIndices[desc.firstControlPoint + iLane]] : 
             float2(0, 0);
 
         for (int offset = 16; offset > 0; offset /= 2)
@@ -515,16 +533,16 @@ struct TexcoordEvaluatorHLSL
             center.y += WaveReadLaneAt(center.y, WaveGetLaneIndex() + offset);
         }
 
-        if (threadIdx.x == 0)
+        if (iLane == 0)
         {
             m_texcoordPatchPoints[m_texcoordPatchPointsOffsets[iSurface] + 0] = center / faceSize;
         }
 
-        if (threadIdx.x < faceSize)
+        if (iLane < faceSize)
         {
-            float2 a = m_texcoordControlPoints[m_texcoordControlPointIndices[desc.firstControlPoint + threadIdx.x]];
-            float2 b = m_texcoordControlPoints[m_texcoordControlPointIndices[desc.firstControlPoint + (threadIdx.x + 1) % faceSize]];
-            m_texcoordPatchPoints[m_texcoordPatchPointsOffsets[iSurface] + threadIdx.x + 1] = 0.5f * (a + b);
+            float2 a = m_texcoordControlPoints[m_texcoordControlPointIndices[desc.firstControlPoint + iLane]];
+            float2 b = m_texcoordControlPoints[m_texcoordControlPointIndices[desc.firstControlPoint + (iLane + 1) % faceSize]];
+            m_texcoordPatchPoints[m_texcoordPatchPointsOffsets[iSurface] + iLane + 1] = 0.5f * (a + b);
         }
     }
 #endif

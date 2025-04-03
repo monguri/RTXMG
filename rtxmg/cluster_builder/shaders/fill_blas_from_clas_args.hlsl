@@ -23,6 +23,7 @@
 
 #include <nvrhi/nvrhiHLSL.h>
 #include "rtxmg/cluster_builder/fill_blas_from_clas_args_params.h"
+#include "rtxmg/cluster_builder/copy_cluster_offset_params.h"
 
 ConstantBuffer<FillBlasFromClasArgsParams> g_Params : register(b0);
 
@@ -36,7 +37,7 @@ void main(uint3 threadIdx : SV_DispatchThreadID)
     if (instanceIndex > g_Params.numInstances)
         return;
 
-    uint2 offsetCount = t_ClusterOffsetCounts[instanceIndex];
+    uint2 offsetCount = t_ClusterOffsetCounts[instanceIndex * ClusterDispatchType::NumTypes + ClusterDispatchType::All];
 
     nvrhi::rt::cluster::IndirectArgs args = (nvrhi::rt::cluster::IndirectArgs)0;
     args.clusterCount = offsetCount.y;

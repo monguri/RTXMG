@@ -28,8 +28,19 @@
 
 #pragma once
 
+
+enum ClusterDispatchType
+{
+    PureBSpline,
+    RegularBSpline,
+    Limit,
+    All, // used for texcoords, fill clas to blas
+    NumTypes
+};
+
 struct CopyClusterOffsetParams
 {
-    int instanceIndex;
-    float3 pad;
+    uint32_t instanceIndex;
+    uint32_t dispatchTypeIndex;
+    uint2 pad;
 };

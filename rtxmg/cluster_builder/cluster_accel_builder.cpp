@@ -118,6 +118,21 @@ inline char const* toString(TessellatorConfig::VisibilityMode mode)
     }
 }
 
+constexpr auto kSurfaceTypeDefines = std::to_array<const char*>(
+{
+    "SURFACE_TYPE_PUREBSPLINE",
+    "SURFACE_TYPE_REGULARBSPLINE",
+    "SURFACE_TYPE_LIMIT",
+    "SURFACE_TYPE_ALL"
+});
+static_assert(kSurfaceTypeDefines.size() == size_t(ShaderPermutationSurfaceType::Count));
+
+inline char const* toString(ShaderPermutationSurfaceType surfaceType)
+{
+    return kSurfaceTypeDefines[uint32_t(surfaceType)];
+}
+
+
 void ClusterAccelBuilder::FillInstantiateTemplateArgs(nvrhi::IBuffer* outArgs, nvrhi::IBuffer* templateAddresses, uint32_t numTemplates, nvrhi::ICommandList* commandList)
 {
     FillInstantiateTemplateArgsParams params = {};
@@ -609,9 +624,9 @@ void ClusterAccelBuilder::FillInstanceClusters(const RTXMGScene& scene, ClusterA
     stats::clusterAccelSamplers.fillClustersTime.Start(commandList);
 
     uint32_t surfaceOffset{ 0 };
-    for (uint32_t i = 0; i < instances.size(); ++i)
+    for (uint32_t instanceIndex = 0; instanceIndex < instances.size(); ++instanceIndex)
     {
-        const auto& instance = instances[i];
+        const auto& instance = instances[instanceIndex];
         assert(instance.meshInstance.get());
         const auto& donutMeshInfo = instance.meshInstance->GetMesh();
         assert(donutMeshInfo.get());
@@ -622,13 +637,12 @@ void ClusterAccelBuilder::FillInstanceClusters(const RTXMGScene& scene, ClusterA
         const uint32_t surfaceCount = subd.SurfaceCount();
 
         FillClustersParams params = {};
-        params.instanceIndex = i;
+        params.instanceIndex = instanceIndex;
         params.quantNBits = m_tessellatorConfig.quantNBits;
         params.isolationLevel = subd.m_dynamicIsolationLevel;
         params.globalDisplacementScale = m_tessellatorConfig.displacementScale;
         params.clusterPattern = uint32_t(m_tessellatorConfig.clusterPattern);
         params.firstGeometryIndex = firstGeometryIndex;
-
         commandList->writeBuffer(m_fillClustersParamsBuffer, &params, sizeof(FillClustersParams));
 
         auto bindingSetDesc = nvrhi::BindingSetDesc()
@@ -680,22 +694,25 @@ void ClusterAccelBuilder::FillInstanceClusters(const RTXMGScene& scene, ClusterA
             m_fillClustersBindlessBL = m_device->createBindlessLayout(bindlessLayoutDesc);
         }
 
-        FillClustersPermutation shaderPermutation(subd.m_hasDisplacementMaterial);
+        auto GetFillClustersPSO = [this](const FillClustersPermutation& shaderPermutation)
+            {
+                if (!m_fillClustersPSOs[shaderPermutation.index()])
+                {
+                    std::vector<donut::engine::ShaderMacro> fillClustersMacros;
+                    fillClustersMacros.push_back(donut::engine::ShaderMacro("DISPLACEMENT_MAPS", shaderPermutation.isDisplacementEnabled() ? "1" : "0"));
+                    fillClustersMacros.push_back(donut::engine::ShaderMacro("SURFACE_TYPE", toString(shaderPermutation.surfaceType())));
+                    nvrhi::ShaderHandle shader = m_shaderFactory.CreateShader("cluster_builder/fill_clusters.hlsl", "FillClustersMain", &fillClustersMacros, nvrhi::ShaderType::Compute);
 
-        if (!m_fillClustersPSOs[shaderPermutation.index()])
-        {
-            std::vector<donut::engine::ShaderMacro> fillClustersMacros;
-            fillClustersMacros.push_back(donut::engine::ShaderMacro("DISPLACEMENT_MAPS", shaderPermutation.isDisplacementEnabled() ? "1" : "0"));
-            nvrhi::ShaderHandle shader = m_shaderFactory.CreateShader("cluster_builder/fill_clusters.hlsl", "FillClustersMain", &fillClustersMacros, nvrhi::ShaderType::Compute);
+                    auto computePipelineDesc = nvrhi::ComputePipelineDesc()
+                        .setComputeShader(shader)
+                        .addBindingLayout(m_fillClustersBL)
+                        .addBindingLayout(m_fillClustersBindlessBL);
 
-            auto computePipelineDesc = nvrhi::ComputePipelineDesc()
-                .setComputeShader(shader)
-                .addBindingLayout(m_fillClustersBL)
-                .addBindingLayout(m_fillClustersBindlessBL);
-
-            m_fillClustersPSOs[shaderPermutation.index()] = m_device->createComputePipeline(computePipelineDesc);
-        }
-
+                    m_fillClustersPSOs[shaderPermutation.index()] = m_device->createComputePipeline(computePipelineDesc);
+                }
+                return m_fillClustersPSOs[shaderPermutation.index()];
+            };
+        
         if (!m_fillClustersTexcoordsPSO)
         {
             nvrhi::ShaderHandle shader = m_shaderFactory.CreateShader("cluster_builder/fill_clusters.hlsl", "FillClustersTexcoordsMain", nullptr, nvrhi::ShaderType::Compute);
@@ -709,18 +726,25 @@ void ClusterAccelBuilder::FillInstanceClusters(const RTXMGScene& scene, ClusterA
         }
 
         auto state = nvrhi::ComputeState()
-            .setPipeline(m_fillClustersPSOs[shaderPermutation.index()])
             .addBindingSet(bindingSet)
             .addBindingSet(m_descriptorTable)
             .setIndirectParams(m_fillClustersDispatchIndirectBuffer);
-        commandList->setComputeState(state);
-        uint32_t vertexOffsetBytes = (i * kFillClustersPerInstanceIndirectArgCount) * uint32_t(m_fillClustersDispatchIndirectBuffer.GetElementBytes());
-        commandList->dispatchIndirect(vertexOffsetBytes);
+
+
+        
+        for (uint32_t i = 0; i <= uint32_t(ShaderPermutationSurfaceType::Limit); i++)
+        {
+            FillClustersPermutation shaderPermutation = { subd.m_hasDisplacementMaterial, ShaderPermutationSurfaceType(i) };
+            state.setPipeline(GetFillClustersPSO(shaderPermutation));
+            commandList->setComputeState(state);
+            uint32_t dispatchIndirectArgsOffset = (instanceIndex * ClusterDispatchType::NumTypes + ClusterDispatchType(i)) * uint32_t(m_fillClustersDispatchIndirectBuffer.GetElementBytes());
+            commandList->dispatchIndirect(dispatchIndirectArgsOffset);
+        }
 
         state.setPipeline(m_fillClustersTexcoordsPSO);
         commandList->setComputeState(state);
-        uint32_t texcoordOffsetBytes = (i * kFillClustersPerInstanceIndirectArgCount + 1) * uint32_t(m_fillClustersDispatchIndirectBuffer.GetElementBytes());
-        commandList->dispatchIndirect(texcoordOffsetBytes);
+        uint32_t dispatchIndirectArgsOffset = (instanceIndex * ClusterDispatchType::NumTypes + ClusterDispatchType::All) * uint32_t(m_fillClustersDispatchIndirectBuffer.GetElementBytes());
+        commandList->dispatchIndirect(dispatchIndirectArgsOffset);
 
         surfaceOffset += surfaceCount;
     }
@@ -737,7 +761,8 @@ void ClusterAccelBuilder::FillInstanceClusters(const RTXMGScene& scene, ClusterA
 #endif
 }
 
-void ClusterAccelBuilder::ComputeInstanceClusterTiling(const SubdivisionSurface& subdivisionSurface,
+void ClusterAccelBuilder::ComputeInstanceClusterTiling(uint32_t instanceIndex, 
+    const SubdivisionSurface& subdivisionSurface,
     ClusterAccels& accels,
     uint32_t firstGeometryIndex,
     nvrhi::IBuffer* geometryBuffer,
@@ -777,8 +802,7 @@ void ClusterAccelBuilder::ComputeInstanceClusterTiling(const SubdivisionSurface&
         params.numHiZLODs = m_tessellatorConfig.zbuffer->GetNumHiZLODs();
         params.invHiZSize = m_tessellatorConfig.zbuffer->GetInvHiZSize();
     }
-    commandList->writeBuffer(m_computeClusterTilingParamsBuffer, &params, sizeof(ComputeClusterTilingParams));
-
+    
     auto bindingSetDesc = nvrhi::BindingSetDesc()
         .addItem(nvrhi::BindingSetItem::ConstantBuffer(0, m_computeClusterTilingParamsBuffer))
         .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(0, subdivisionSurface.m_positionsBuffer))
@@ -831,7 +855,8 @@ void ClusterAccelBuilder::ComputeInstanceClusterTiling(const SubdivisionSurface&
     ComputeClusterTilingPermutation shaderPermutation(subdivisionSurface.m_hasDisplacementMaterial,
         m_tessellatorConfig.enableFrustumVisibility,
         m_tessellatorConfig.tessMode,
-        m_tessellatorConfig.visMode);
+        m_tessellatorConfig.visMode,
+        ShaderPermutationSurfaceType::PureBSpline);
 
     if (!m_computeClusterTilingBindlessBL)
     {
@@ -844,44 +869,70 @@ void ClusterAccelBuilder::ComputeInstanceClusterTiling(const SubdivisionSurface&
         m_computeClusterTilingBindlessBL = m_device->createBindlessLayout(bindlessLayoutDesc);
     }
 
-    if (!m_computeClusterTilingPatchPSOs[shaderPermutation.index()])
-    {
-        std::vector<donut::engine::ShaderMacro> macros;
-        macros.push_back(donut::engine::ShaderMacro("DISPLACEMENT_MAPS", shaderPermutation.isDisplacementEnabled() ? "1" : "0"));
-        macros.push_back(donut::engine::ShaderMacro("TESS_MODE", toString(shaderPermutation.tessellationMode())));
-        macros.push_back(donut::engine::ShaderMacro("ENABLE_FRUSTUM_VISIBILITY", shaderPermutation.isFrustumVisibilityEnabled() ? "1" : "0"));
-        macros.push_back(donut::engine::ShaderMacro("VIS_MODE", toString(shaderPermutation.visibilityMode())));
+    auto GetComputeClusterTilingPSO = [this](const ComputeClusterTilingPermutation& shaderPermutation)
+        {
+            if (!m_computeClusterTilingPSOs[shaderPermutation.index()])
+            {
+                std::vector<donut::engine::ShaderMacro> macros;
+                macros.push_back(donut::engine::ShaderMacro("DISPLACEMENT_MAPS", shaderPermutation.isDisplacementEnabled() ? "1" : "0"));
+                macros.push_back(donut::engine::ShaderMacro("TESS_MODE", toString(shaderPermutation.tessellationMode())));
+                macros.push_back(donut::engine::ShaderMacro("ENABLE_FRUSTUM_VISIBILITY", shaderPermutation.isFrustumVisibilityEnabled() ? "1" : "0"));
+                macros.push_back(donut::engine::ShaderMacro("VIS_MODE", toString(shaderPermutation.visibilityMode())));
+                macros.push_back(donut::engine::ShaderMacro("SURFACE_TYPE", toString(shaderPermutation.surfaceType())));
 
-        nvrhi::ShaderDesc tilingDesc(nvrhi::ShaderType::Compute);
-        nvrhi::ShaderHandle shader = m_shaderFactory.CreateShader("cluster_builder/compute_cluster_tiling.hlsl", "main", &macros, tilingDesc);
+                nvrhi::ShaderDesc tilingDesc(nvrhi::ShaderType::Compute);
+                nvrhi::ShaderHandle shader = m_shaderFactory.CreateShader("cluster_builder/compute_cluster_tiling.hlsl", "main", &macros, tilingDesc);
 
-        auto computePipelineDesc = nvrhi::ComputePipelineDesc()
-            .setComputeShader(shader)
-            .addBindingLayout(m_computeClusterTilingBL)
-            .addBindingLayout(m_computeClusterTilingHizBL)
-            .addBindingLayout(m_computeClusterTilingBindlessBL);
+                auto computePipelineDesc = nvrhi::ComputePipelineDesc()
+                    .setComputeShader(shader)
+                    .addBindingLayout(m_computeClusterTilingBL)
+                    .addBindingLayout(m_computeClusterTilingHizBL)
+                    .addBindingLayout(m_computeClusterTilingBindlessBL);
 
-        m_computeClusterTilingPatchPSOs[shaderPermutation.index()] = m_device->createComputePipeline(computePipelineDesc);
-    }
+                m_computeClusterTilingPSOs[shaderPermutation.index()] = m_device->createComputePipeline(computePipelineDesc);
+            }
+            return m_computeClusterTilingPSOs[shaderPermutation.index()];
+        };
 
     auto state = nvrhi::ComputeState()
-        .setPipeline(m_computeClusterTilingPatchPSOs[shaderPermutation.index()])
         .addBindingSet(bindingSet)
         .addBindingSet(hizSet)
         .addBindingSet(m_descriptorTable);
 
-    commandList->setComputeState(state);
+    // Loop
+    for (uint32_t i = 0; i <= uint32_t(ClusterDispatchType::Limit); i++)
+    {
+        SubdivisionSurface::SurfaceType subdSurfaceType = SubdivisionSurface::SurfaceType(i);
 
-    const uint32_t numSurfaces = subdivisionSurface.SurfaceCount();
+        // Skip no limit surfaces
+        params.surfaceStart = subdivisionSurface.m_surfaceOffsets[uint32_t(subdSurfaceType)];
+        params.surfaceEnd = subdivisionSurface.m_surfaceOffsets[uint32_t(subdSurfaceType) + 1];
 
-    commandList->dispatch(div_ceil(numSurfaces, kComputeClusterTilingWavesPerSurface), 1, 1);
+        uint32_t dispatchCount = params.surfaceEnd - params.surfaceStart;
+        if (dispatchCount == 0)
+            continue;
+        
+        ShaderPermutationSurfaceType shaderSurfaceType = ShaderPermutationSurfaceType(i);
+        commandList->writeBuffer(m_computeClusterTilingParamsBuffer, &params, sizeof(ComputeClusterTilingParams));
+        shaderPermutation.setSurfaceType(shaderSurfaceType);
+        state.setPipeline(GetComputeClusterTilingPSO(shaderPermutation));
+        commandList->setComputeState(state);
+        
+        commandList->dispatch(div_ceil(dispatchCount, kComputeClusterTilingWavesPerSurface), 1, 1);
+
+        // Save cluster offset for this instance
+        ClusterDispatchType dispatchType = ClusterDispatchType(i);
+        CopyClusterOffset(instanceIndex, dispatchType, tessCounterRange, commandList);
+    }
 }
 
-void ClusterAccelBuilder::CopyClusterOffset(int instanceIndex, const nvrhi::BufferRange& tessCounterRange, nvrhi::ICommandList* commandList)
+void ClusterAccelBuilder::CopyClusterOffset(uint32_t instanceIndex,
+    ClusterDispatchType dispatchType, const nvrhi::BufferRange& tessCounterRange, nvrhi::ICommandList* commandList)
 {
     nvrhi::utils::ScopedMarker marker(commandList, "ClusterAccelBuilder::CopyClusterOffset");
     CopyClusterOffsetParams params;
     params.instanceIndex = instanceIndex;
+    params.dispatchTypeIndex = uint32_t(dispatchType);
     commandList->writeBuffer(m_copyClusterOffsetParamsBuffer, &params, sizeof(CopyClusterOffsetParams));
 
     auto bindingSetDesc = nvrhi::BindingSetDesc()
@@ -996,10 +1047,10 @@ void ClusterAccelBuilder::UpdateMemoryAllocations(ClusterAccels& accels, uint32_
         accels.blasPtrsBuffer.Release();
         accels.blasSizesBuffer.Release();
 
-        m_clusterOffsetCountsBuffer.Create(m_numInstances, "ClusterOffsets", m_device);
+        m_clusterOffsetCountsBuffer.Create(m_numInstances * ClusterDispatchType::NumTypes, "ClusterOffsets", m_device);
         nvrhi::BufferDesc dispatchIndirectDesc =
         {
-            .byteSize = m_numInstances * kFillClustersPerInstanceIndirectArgCount * m_fillClustersDispatchIndirectBuffer.GetElementBytes(),
+            .byteSize = m_numInstances * ClusterDispatchType::NumTypes * m_fillClustersDispatchIndirectBuffer.GetElementBytes(),
             .structStride = uint32_t(m_fillClustersDispatchIndirectBuffer.GetElementBytes()),
             .debugName = "FillClustersIndirectArgs",
             .canHaveUAVs = true,
@@ -1138,12 +1189,10 @@ void ClusterAccelBuilder::BuildAccel(const RTXMGScene& scene, const TessellatorC
             uint32_t firstGeometryIndex = donutMeshInfo->geometries[0]->globalGeometryIndex;
             uint32_t surfaceCount{ subd.SurfaceCount() };
 
-            ComputeInstanceClusterTiling(subd, accels, firstGeometryIndex, scene.GetGeometryBuffer(), scene.GetMaterialBuffer(), scene.GetDisplacementSampler(),
+            ComputeInstanceClusterTiling(i, subd, accels, firstGeometryIndex, scene.GetGeometryBuffer(), scene.GetMaterialBuffer(), scene.GetDisplacementSampler(),
                 inst.localToWorld, surfaceOffset, surfaceCount, tessCounterRange, commandList);
 
             surfaceOffset += surfaceCount;
-            // Save cluster offset for this instance
-            CopyClusterOffset(i, tessCounterRange, commandList);
         }
         stats::clusterAccelSamplers.clusterTilingTime.Stop();
     }

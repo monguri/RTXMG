@@ -26,6 +26,8 @@
 #include <donut/shaders/binding_helpers.hlsli>
 
 #include "rtxmg/cluster_builder/fill_clusters_params.h"
+#include "rtxmg/cluster_builder/copy_cluster_offset_params.h"
+
 #include "rtxmg/subdivision/subdivision_eval.hlsli"
 #include "rtxmg/cluster_builder/tessellator_constants.h"
 #include "rtxmg/subdivision/subdivision_plan_hlsl.h"
@@ -35,7 +37,6 @@
 #include "rtxmg/cluster_builder/displacement.hlsli"
 
 #include "rtxmg/subdivision/osd_ports/tmr/surfaceDescriptor.h"
-
 
 StructuredBuffer<GridSampler> t_GridSamplers : register(t0);
 StructuredBuffer<uint2> t_ClusterOffsetCounts : register(t1);
@@ -89,7 +90,18 @@ void GathererWriteTexcoord(TexCoordLimitFrame texcoord, uint32_t clusterIndex, u
 void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
 {
     const uint32_t groupClusterIndex = groupIdx.x * kFillClustersVerticesWaves + threadIdx.y;
-    uint2 offsetCount = t_ClusterOffsetCounts[g_TessParams.instanceIndex];
+
+#if SURFACE_TYPE == SURFACE_TYPE_ALL
+    uint32_t kDispatchTypeIndex = ClusterDispatchType::All;
+#elif SURFACE_TYPE == SURFACE_TYPE_PUREBSPLINE
+    uint32_t kDispatchTypeIndex = ClusterDispatchType::PureBSpline;
+#elif SURFACE_TYPE == SURFACE_TYPE_REGULARBSPLINE
+    uint32_t kDispatchTypeIndex = ClusterDispatchType::RegularBSpline;
+#elif SURFACE_TYPE == SURFACE_TYPE_LIMIT
+    uint32_t kDispatchTypeIndex = ClusterDispatchType::Limit;
+#endif
+
+    uint2 offsetCount = t_ClusterOffsetCounts[g_TessParams.instanceIndex * ClusterDispatchType::NumTypes + kDispatchTypeIndex];
     if (groupClusterIndex >= offsetCount.y)
         return; // early out waves beyond cluster array end
 
@@ -156,7 +168,7 @@ void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_Gr
 void FillClustersTexcoordsMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
 {
     const uint32_t groupClusterIndex = groupIdx.x * kFillClustersTexcoordsThreadsX + threadIdx.x;
-    uint2 offsetCount = t_ClusterOffsetCounts[g_TessParams.instanceIndex];
+    uint2 offsetCount = t_ClusterOffsetCounts[g_TessParams.instanceIndex * ClusterDispatchType::NumTypes + ClusterDispatchType::All];
     if (groupClusterIndex >= offsetCount.y)
         return; // early out waves beyond cluster array end
 

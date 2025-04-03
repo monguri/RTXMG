@@ -353,16 +353,17 @@ float CalculateEdgeVisibility(float visibility, uint32_t waveSampleOffset, uint3
 
 void WaveEvaluateBSplinePatch8(SubdivisionEvaluatorHLSL subd, 
     TexcoordEvaluatorHLSL texcoordEval,
-    uint3 threadIdx, uint32_t waveSampleOffset)
+    uint32_t iLane, uint32_t waveSampleOffset)
 {
-    const int iLane = threadIdx.x;
-
     // always do the non-displaced evaluation first.  Displacement maps will perturb this calculation below
+#if SURFACE_TYPE == SURFACE_TYPE_ALL
     if (subd.IsPureBSplinePatch())
     {
         LimitFrame limit = subd.WaveEvaluatePureBsplinePatch8(iLane);
         if (iLane < kNumWaveSurfaceUVSamples)
+        {
             samples[waveSampleOffset + iLane] = limit;
+        }
     }
     else if (subd.IsBSplinePatch())
     {
@@ -382,6 +383,25 @@ void WaveEvaluateBSplinePatch8(SubdivisionEvaluatorHLSL subd,
             samples[waveSampleOffset + iLane] = limit;
         }
     }
+#elif SURFACE_TYPE == SURFACE_TYPE_PUREBSPLINE
+    LimitFrame limit = subd.WaveEvaluatePureBsplinePatch8(iLane);
+    if (iLane < kNumWaveSurfaceUVSamples)
+        samples[waveSampleOffset + iLane] = limit;
+#elif SURFACE_TYPE == SURFACE_TYPE_REGULARBSPLINE
+    LimitFrame limit = subd.WaveEvaluateBsplinePatch(iLane);
+    if (iLane < kNumWaveSurfaceUVSamples)
+    {
+        samples[waveSampleOffset + iLane] = limit;
+    }
+#elif SURFACE_TYPE == SURFACE_TYPE_LIMIT
+    // there is no wave parallel implementation for non-bspline patches falling back to single thread
+    subd.WaveEvaluatePatchPoints(iLane);
+    if (iLane < kNumWaveSurfaceUVSamples)
+    {
+        LimitFrame limit = subd.EvaluateLimitSurface(kWaveSurfaceUVSamples[iLane]);
+        samples[waveSampleOffset + iLane] = limit;
+    }
+#endif
 
 #if DISPLACEMENT_MAPS
     uint32_t geometryIndex = t_SurfaceToGeometryIndex[subd.m_surfaceIndex] + g_Params.firstGeometryIndex;
@@ -686,7 +706,7 @@ void main(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
 {
     const uint32_t iLane = threadIdx.x;
     const uint32_t iWave = threadIdx.y;
-    const uint32_t iSurface = kComputeClusterTilingWavesPerSurface * groupIdx.x + iWave;
+    const uint32_t iSurface = kComputeClusterTilingWavesPerSurface * groupIdx.x + iWave + g_Params.surfaceStart;
 
 #if ENABLE_GROUP_ATOMICS
     if (iLane == 0 && iWave == 0)
@@ -703,7 +723,7 @@ void main(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
     uint numSurfaceDescriptors, surfaceDescriptorStride;
     t_VertexSurfaceDescriptors.GetDimensions(numSurfaceDescriptors, surfaceDescriptorStride);
 
-    if (!(iSurface < numSurfaceDescriptors))
+    if (iSurface >= g_Params.surfaceEnd)
     {
         return; // early out waves beyond cluster array end
     }
@@ -733,7 +753,7 @@ void main(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
     texcoordEval.m_texcoordPatchPointsOffsets = t_TexCoordPatchPointsOffsets;
     texcoordEval.m_texcoordPatchPoints = u_TexCoordPatchPoints;
     texcoordEval.m_texcoordControlPoints = t_TexCoords;
-    texcoordEval.WaveEvaluateTexCoordPatchPoints(threadIdx, iSurface);
+    texcoordEval.WaveEvaluateTexCoordPatchPoints(iLane, iSurface);
 
     // Frustum "culling"
     float visibility = CalculateVisibility(subd, threadIdx);
@@ -756,7 +776,7 @@ void main(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
     //
 
     uint32_t waveSampleOffset = kNumWaveSurfaceUVSamples * iWave;
-    WaveEvaluateBSplinePatch8(subd, texcoordEval, threadIdx, waveSampleOffset);
+    WaveEvaluateBSplinePatch8(subd, texcoordEval, iLane, waveSampleOffset);
 
     const float tessFactor = g_Params.coarseTessellationRate / g_Params.fineTessellationRate;
 

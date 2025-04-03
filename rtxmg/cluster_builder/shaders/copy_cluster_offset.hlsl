@@ -33,26 +33,51 @@ ConstantBuffer<CopyClusterOffsetParams> g_Params : register(b0);
 [numthreads(1, 1, 1)]
 void main(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
 {
-    uint currentClusterCount = t_TessellationCounters[0].clusters;
-    
-    uint instanceClusterCount = 0;
-    if (g_Params.instanceIndex == 0)
+    uint totalClusterCount = t_TessellationCounters[0].clusters;
+    uint dispatchClusterCount = 0;
+
+    // Offsets goes by the order of ClusterDispatchType
+    // PureBSpline Clusters
+    // RegularBSpline Clusters
+    // Limit Clusters
+    // All Clusters
+
+    uint dispatchIndex = g_Params.instanceIndex * ClusterDispatchType::NumTypes + g_Params.dispatchTypeIndex;
+    if (dispatchIndex == 0)
     {
-        instanceClusterCount = currentClusterCount;
-        u_ClusterOffsetCounts[0] = uint2(0, instanceClusterCount);
+        dispatchClusterCount = totalClusterCount;
+        u_ClusterOffsetCounts[0] = uint2(0, dispatchClusterCount);
     }
     else
     {
-        uint2 previousOffsetCount = u_ClusterOffsetCounts[g_Params.instanceIndex - 1];
+        uint2 previousOffsetCount = u_ClusterOffsetCounts[dispatchIndex - 1];
         uint instanceOffset = previousOffsetCount.x + previousOffsetCount.y;
-        instanceClusterCount = currentClusterCount - instanceOffset;
-        u_ClusterOffsetCounts[g_Params.instanceIndex] = uint2(instanceOffset, instanceClusterCount);
+        dispatchClusterCount = totalClusterCount - instanceOffset;
+        u_ClusterOffsetCounts[dispatchIndex] = uint2(instanceOffset, dispatchClusterCount);
     }
-    
-    // Alternate between vertices and texcoord dispatch args
-    const uint32_t vertThreadGroupsX = (instanceClusterCount + kFillClustersVerticesWaves - 1) / kFillClustersVerticesWaves;
-    const uint32_t texcoordsThreadGroupsX = (instanceClusterCount + kFillClustersTexcoordsThreadsX - 1) / kFillClustersTexcoordsThreadsX;
 
-    u_FillClustersIndirectArgs[g_Params.instanceIndex * kFillClustersPerInstanceIndirectArgCount + 0] = uint3(vertThreadGroupsX, 1, 1);
-    u_FillClustersIndirectArgs[g_Params.instanceIndex * kFillClustersPerInstanceIndirectArgCount + 1] = uint3(texcoordsThreadGroupsX, 1, 1);
+    // Write the number of clusters for the surface type
+    const uint32_t vertThreadGroupsX = (dispatchClusterCount + kFillClustersVerticesWaves - 1) / kFillClustersVerticesWaves;
+    u_FillClustersIndirectArgs[dispatchIndex] = uint3(vertThreadGroupsX, 1, 1);
+    
+    // Write the total number of clusters for the instance
+    if (g_Params.dispatchTypeIndex == ClusterDispatchType::Limit)
+    {
+        uint32_t instanceTotalIndex = g_Params.instanceIndex * ClusterDispatchType::NumTypes + ClusterDispatchType::All;
+        if (g_Params.instanceIndex == 0)
+        {
+            dispatchClusterCount = totalClusterCount;
+            u_ClusterOffsetCounts[instanceTotalIndex] = uint2(0, dispatchClusterCount);
+        }
+        else
+        {
+            uint2 previousOffsetCount = u_ClusterOffsetCounts[(g_Params.instanceIndex - 1) * ClusterDispatchType::NumTypes + ClusterDispatchType::All];
+            uint instanceOffset = previousOffsetCount.x + previousOffsetCount.y;
+            dispatchClusterCount = totalClusterCount - instanceOffset;
+            u_ClusterOffsetCounts[instanceTotalIndex] = uint2(instanceOffset, dispatchClusterCount);
+        }
+
+        const uint32_t texcoordsThreadGroupsX = (dispatchClusterCount + kFillClustersTexcoordsThreadsX - 1) / kFillClustersTexcoordsThreadsX;
+        u_FillClustersIndirectArgs[g_Params.instanceIndex * ClusterDispatchType::NumTypes + ClusterDispatchType::All] = uint3(texcoordsThreadGroupsX, 1, 1);
+    }
 }

@@ -39,8 +39,6 @@ static const uint32_t kFillClustersVerticesWaves = 1;
 // We do cluster per x, y is the cluster UV evaluation points
 static const uint32_t kFillClustersTexcoordsThreadsX = 32;
 
-static const uint32_t kFillClustersPerInstanceIndirectArgCount = 2;
-
 struct FillClustersParams
 {
     uint32_t instanceIndex;
@@ -50,7 +48,7 @@ struct FillClustersParams
 
     float globalDisplacementScale;
     uint32_t clusterPattern;
-    uint32_t pad0[2];
+    uint2 pad0;
 };
 
 #endif // FILL_CLUSTERS_PARAMS_H

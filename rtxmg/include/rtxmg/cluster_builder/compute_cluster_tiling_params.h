@@ -35,11 +35,15 @@ static const uint32_t kComputeClusterTilingWavesPerSurface = 4;
 
 struct ComputeClusterTilingParams
 {
+    uint32_t surfaceStart; //inclusive
+    uint32_t surfaceEnd; //exclusive
+    uint2 pad0;
+    
     float4x4 matWorldToClip;
     float3x4 localToWorld;
 
     float3 cameraPos;
-    float pad0;
+    float pad1;
 
     Box3 aabb;
 
