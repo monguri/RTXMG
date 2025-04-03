@@ -199,6 +199,7 @@ struct UIData
     bool showHelpWindow = true;
     bool showLodInspector = false;
     bool forceRebuildAccelStruct = true;
+    bool enableMonolithicClusterBuild = false;
 
     TimeLineEditorState timeLineEditorState;
 

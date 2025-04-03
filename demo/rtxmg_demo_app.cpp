@@ -852,6 +852,7 @@ void RTXMGDemoApp::Render(nvrhi::IFramebuffer* framebuffer)
                 .enableHiZVisibility = m_args.enableHiZVisibility,
                 .enableBackfaceVisibility = m_args.enableBackfaceVisibility,
                 .enableLogging = m_args.enableAccelBuildLogging,
+                .enableMonolithicClusterBuild = m_ui.enableMonolithicClusterBuild,
                 .viewportSize = { (uint32_t)m_renderSize.x, (uint32_t)m_renderSize.y },
                 .edgeSegments = m_args.edgeSegments,
                 .quantNBits = m_args.quantNBits,

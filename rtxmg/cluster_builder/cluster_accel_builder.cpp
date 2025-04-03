@@ -730,17 +730,26 @@ void ClusterAccelBuilder::FillInstanceClusters(const RTXMGScene& scene, ClusterA
             .addBindingSet(m_descriptorTable)
             .setIndirectParams(m_fillClustersDispatchIndirectBuffer);
 
-
-        
-        for (uint32_t i = 0; i <= uint32_t(ShaderPermutationSurfaceType::Limit); i++)
+        if (m_tessellatorConfig.enableMonolithicClusterBuild)
         {
-            FillClustersPermutation shaderPermutation = { subd.m_hasDisplacementMaterial, ShaderPermutationSurfaceType(i) };
+            FillClustersPermutation shaderPermutation = { subd.m_hasDisplacementMaterial, ShaderPermutationSurfaceType::All };
             state.setPipeline(GetFillClustersPSO(shaderPermutation));
             commandList->setComputeState(state);
-            uint32_t dispatchIndirectArgsOffset = (instanceIndex * ClusterDispatchType::NumTypes + ClusterDispatchType(i)) * uint32_t(m_fillClustersDispatchIndirectBuffer.GetElementBytes());
+            uint32_t dispatchIndirectArgsOffset = (instanceIndex * ClusterDispatchType::NumTypes + ClusterDispatchType::Limit) * uint32_t(m_fillClustersDispatchIndirectBuffer.GetElementBytes());
             commandList->dispatchIndirect(dispatchIndirectArgsOffset);
         }
-
+        else
+        {
+            for (uint32_t i = 0; i <= uint32_t(ShaderPermutationSurfaceType::Limit); i++)
+            {
+                FillClustersPermutation shaderPermutation = { subd.m_hasDisplacementMaterial, ShaderPermutationSurfaceType(i) };
+                state.setPipeline(GetFillClustersPSO(shaderPermutation));
+                commandList->setComputeState(state);
+                uint32_t dispatchIndirectArgsOffset = (instanceIndex * ClusterDispatchType::NumTypes + ClusterDispatchType(i)) * uint32_t(m_fillClustersDispatchIndirectBuffer.GetElementBytes());
+                commandList->dispatchIndirect(dispatchIndirectArgsOffset);
+            }
+        }
+        
         state.setPipeline(m_fillClustersTexcoordsPSO);
         commandList->setComputeState(state);
         uint32_t dispatchIndirectArgsOffset = (instanceIndex * ClusterDispatchType::NumTypes + ClusterDispatchType::All) * uint32_t(m_fillClustersDispatchIndirectBuffer.GetElementBytes());
@@ -899,31 +908,54 @@ void ClusterAccelBuilder::ComputeInstanceClusterTiling(uint32_t instanceIndex,
         .addBindingSet(hizSet)
         .addBindingSet(m_descriptorTable);
 
-    // Loop
-    for (uint32_t i = 0; i <= uint32_t(ClusterDispatchType::Limit); i++)
+    if (m_tessellatorConfig.enableMonolithicClusterBuild)
     {
-        SubdivisionSurface::SurfaceType subdSurfaceType = SubdivisionSurface::SurfaceType(i);
-
         // Skip no limit surfaces
-        params.surfaceStart = subdivisionSurface.m_surfaceOffsets[uint32_t(subdSurfaceType)];
-        params.surfaceEnd = subdivisionSurface.m_surfaceOffsets[uint32_t(subdSurfaceType) + 1];
-
+        params.surfaceStart = 0;
+        params.surfaceEnd = subdivisionSurface.m_surfaceOffsets[uint32_t(SubdivisionSurface::SurfaceType::NoLimit)];
         uint32_t dispatchCount = params.surfaceEnd - params.surfaceStart;
-        if (dispatchCount == 0)
-            continue;
-        
-        ShaderPermutationSurfaceType shaderSurfaceType = ShaderPermutationSurfaceType(i);
+
         commandList->writeBuffer(m_computeClusterTilingParamsBuffer, &params, sizeof(ComputeClusterTilingParams));
+        ShaderPermutationSurfaceType shaderSurfaceType = ShaderPermutationSurfaceType::All;
         shaderPermutation.setSurfaceType(shaderSurfaceType);
         state.setPipeline(GetComputeClusterTilingPSO(shaderPermutation));
         commandList->setComputeState(state);
-        
+
         commandList->dispatch(div_ceil(dispatchCount, kComputeClusterTilingWavesPerSurface), 1, 1);
 
         // Save cluster offset for this instance
-        ClusterDispatchType dispatchType = ClusterDispatchType(i);
+        ClusterDispatchType dispatchType = ClusterDispatchType::All;
         CopyClusterOffset(instanceIndex, dispatchType, tessCounterRange, commandList);
     }
+    else
+    {
+        // Loop
+        for (uint32_t i = 0; i <= uint32_t(ClusterDispatchType::Limit); i++)
+        {
+            SubdivisionSurface::SurfaceType subdSurfaceType = SubdivisionSurface::SurfaceType(i);
+
+            // Skip no limit surfaces
+            params.surfaceStart = subdivisionSurface.m_surfaceOffsets[uint32_t(subdSurfaceType)];
+            params.surfaceEnd = subdivisionSurface.m_surfaceOffsets[uint32_t(subdSurfaceType) + 1];
+
+            uint32_t dispatchCount = params.surfaceEnd - params.surfaceStart;
+            if (dispatchCount)
+            {
+                commandList->writeBuffer(m_computeClusterTilingParamsBuffer, &params, sizeof(ComputeClusterTilingParams));
+
+                ShaderPermutationSurfaceType shaderSurfaceType = ShaderPermutationSurfaceType(i);
+                shaderPermutation.setSurfaceType(shaderSurfaceType);
+                state.setPipeline(GetComputeClusterTilingPSO(shaderPermutation));
+                commandList->setComputeState(state);
+
+                commandList->dispatch(div_ceil(dispatchCount, kComputeClusterTilingWavesPerSurface), 1, 1);
+            }
+            // Save cluster offset for this instance
+            ClusterDispatchType dispatchType = ClusterDispatchType(i);
+            CopyClusterOffset(instanceIndex, dispatchType, tessCounterRange, commandList);
+        }
+    }
+    
 }
 
 void ClusterAccelBuilder::CopyClusterOffset(uint32_t instanceIndex,

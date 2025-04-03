@@ -81,6 +81,7 @@ struct TessellatorConfig
     bool  enableHiZVisibility = true;
     bool  enableBackfaceVisibility = true;
     bool  enableLogging = false; // enable debug logging for tessellator build
+    bool  enableMonolithicClusterBuild = false;
 
     uint2            viewportSize = { 0u, 0u };
     uint4            edgeSegments = { 8, 8, 8, 8 };

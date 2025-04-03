@@ -547,13 +547,19 @@ void UserInterface::BuildUIMain(int2 screenLayoutSize)
         if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
             ImGui::SetTooltip("Log accel build buffers (Syncs GPU, Slow!)");
 
-        ImGui::SameLine();
         ImGui::Checkbox("Build AS", &uiData.forceRebuildAccelStruct);
         if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
             ImGui::SetTooltip(
                 "Re-tessellate and rebuild acceleration structures every frame.\n"
                 "Disable to freeze tessellation and move the camera around.\n"
-                "Animation will always force a rebuild.\n");
+                "Animation will always force a rebuild.");
+
+        ImGui::SameLine();
+        ImGui::Checkbox("Monolithic ClusterBuild", &uiData.enableMonolithicClusterBuild);
+        if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
+            ImGui::SetTooltip(
+                "Use a single shader for compute cluster tiling and fill clusters.\n"
+                "Instead of splitting the dispatches by surface type");
 
 #if ENABLE_PIXEL_DEBUG
         int2& debugPixel = renderer.GetDebugPixel();
