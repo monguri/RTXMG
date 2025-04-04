@@ -45,7 +45,6 @@
 #define TEXCOORD_PATCH_POINTS_TYPE StructuredBuffer<float2>
 #endif
 
-static const uint32_t kPatchSize = 16;
 static const Index kPureBSplinePatchPointIndices[kPatchSize] = { 6, 7, 8, 9, 5, 0, 1, 10, 4, 3, 2, 11, 15, 14, 13, 12 };
     
 const static uint32_t kNumWaveSurfaceUVSamples = 8;
@@ -104,6 +103,44 @@ struct SubdivisionEvaluatorHLSL
     {
         return GetPlan().IsBSplinePatch(m_isolationLevel);
     }
+    
+    
+#if defined(GROUP_SHARED_CONTROL_POINTS)
+    void PrefetchPatchControlPoints(uint32_t iWave, uint32_t iLane)
+    {
+        SurfaceDescriptor desc = GetSurfaceDesc();
+        
+        if (iLane < kPatchSize)
+        {
+            Index patchPointIndex = kPureBSplinePatchPointIndices[iLane];
+            Index cpi = m_vertexControlPointIndices[desc.firstControlPoint + patchPointIndex];
+            GROUP_SHARED_CONTROL_POINTS(iWave, iLane) = m_vertexControlPoints[cpi];
+        }
+    }
+    
+    LimitFrame EvaluatePureBsplinePatchGroupShared(uint32_t iWave, float2 uv)
+    {
+        float aPtWeights[kPatchSize];
+        float aDuWeights[kPatchSize];
+        float aDvWeights[kPatchSize];
+
+        EvalBasisBSpline(uv, aPtWeights, aDuWeights, aDvWeights,
+                                0, // boundary mask
+                                0.0f, // sharpness
+                                true // pure bspline
+        );
+        
+        LimitFrame limit;
+        limit.Clear();
+        
+        for (int iWeight = 0; iWeight < kPatchSize; ++iWeight)
+        {
+            limit.AddWithWeight(GROUP_SHARED_CONTROL_POINTS(iWave, iWeight), aPtWeights[iWeight], aDuWeights[iWeight], aDvWeights[iWeight]);
+        }
+        
+        return limit;
+    }
+#endif
     
     LimitFrame EvaluatePureBsplinePatch(float2 uv)
     {
@@ -187,20 +224,12 @@ struct SubdivisionEvaluatorHLSL
     
     LimitFrame Evaluate(float2 uv)
     {
-#if SURFACE_TYPE == SURFACE_TYPE_ALL
         if (IsPureBSplinePatch())
             return EvaluatePureBsplinePatch(uv);
         else if (IsBSplinePatch())
             return EvaluateBsplinePatch(uv);
         else
             return EvaluateLimitSurface(uv);
-#elif SURFACE_TYPE == SURFACE_TYPE_PUREBSPLINE
-        return EvaluatePureBsplinePatch(uv);
-#elif SURFACE_TYPE == SURFACE_TYPE_REGULARBSPLINE
-        return EvaluateBsplinePatch(uv);
-#elif SURFACE_TYPE == SURFACE_TYPE_LIMIT
-        return EvaluateLimitSurface(uv);
-#endif
     }
     
     float3 GetPureBsplinePatchPoint(uint32_t i, uint32_t j)

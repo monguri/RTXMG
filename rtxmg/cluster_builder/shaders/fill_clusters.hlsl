@@ -27,12 +27,21 @@
 
 #include "rtxmg/cluster_builder/fill_clusters_params.h"
 #include "rtxmg/cluster_builder/copy_cluster_offset_params.h"
+#include "rtxmg/subdivision/vertex.h"
+
+#define ENABLE_GROUP_PUREBSPLINE 1
+
+// No other way to pass groupshared array to SubdivisionSurfaceEvaluator
+#if SURFACE_TYPE == SURFACE_TYPE_PUREBSPLINE && ENABLE_GROUP_PUREBSPLINE
+groupshared float3 s_patchControlPoints[kPatchSize * kFillClustersVerticesWaves];
+#define GROUP_SHARED_CONTROL_POINTS(waveIndex, controlPointIndex) s_patchControlPoints[waveIndex * kPatchSize + controlPointIndex]
+#endif
 
 #include "rtxmg/subdivision/subdivision_eval.hlsli"
 #include "rtxmg/cluster_builder/tessellator_constants.h"
 #include "rtxmg/subdivision/subdivision_plan_hlsl.h"
 #include "rtxmg/cluster_builder/cluster.h"
-#include "rtxmg/subdivision/vertex.h"
+
 #include "rtxmg/cluster_builder/fill_instantiate_template_args_params.h"
 #include "rtxmg/cluster_builder/displacement.hlsli"
 
@@ -89,7 +98,9 @@ void GathererWriteTexcoord(TexCoordLimitFrame texcoord, uint32_t clusterIndex, u
 [numthreads(32, kFillClustersVerticesWaves, 1)]
 void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
 {
-    const uint32_t groupClusterIndex = groupIdx.x * kFillClustersVerticesWaves + threadIdx.y;
+    uint32_t iLane = threadIdx.x;
+    uint32_t iWave = threadIdx.y;
+    const uint32_t groupClusterIndex = groupIdx.x * kFillClustersVerticesWaves + iWave;
 
 #if SURFACE_TYPE == SURFACE_TYPE_ALL
     uint32_t kDispatchTypeIndex = ClusterDispatchType::All;
@@ -143,14 +154,30 @@ void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_Gr
     Texture2D displacementTex = t_BindlessTextures[displacementTexIndex];
 #endif
 
+#if SURFACE_TYPE == SURFACE_TYPE_PUREBSPLINE && ENABLE_GROUP_PUREBSPLINE
+    subd.PrefetchPatchControlPoints(iWave, iLane);
+#endif
+
     {
         // wave wide loop
-        for (uint16_t pointIndex = (uint16_t)threadIdx.x; pointIndex < rCluster.VerticesPerCluster(); pointIndex += 32)
+        for (uint16_t pointIndex = (uint16_t)iLane; pointIndex < rCluster.VerticesPerCluster(); pointIndex += 32)
         {
             float2 uv = rSampler.UV(rCluster.Linear2Idx2D(pointIndex) + rCluster.offset, (ClusterPattern)g_TessParams.clusterPattern);
 
             // always do the non-displaced evaluation first.  Displacement maps will perturb this calculation below
+#if SURFACE_TYPE == SURFACE_TYPE_ALL
             LimitFrame limit = subd.Evaluate(uv);
+#elif SURFACE_TYPE == SURFACE_TYPE_PUREBSPLINE
+        #if ENABLE_GROUP_PUREBSPLINE
+            LimitFrame limit = subd.EvaluatePureBsplinePatchGroupShared(iWave, uv);
+        #else
+            LimitFrame limit = subd.EvaluatePureBsplinePatch(uv);
+        #endif
+#elif SURFACE_TYPE == SURFACE_TYPE_REGULARBSPLINE
+            LimitFrame limit = subd.EvaluateBsplinePatch(uv);
+#elif SURFACE_TYPE == SURFACE_TYPE_LIMIT
+            LimitFrame limit = subd.EvaluateLimitSurface(uv);
+#endif
 
 #if DISPLACEMENT_MAPS
             limit = DoDisplacement(texcoordEval,

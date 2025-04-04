@@ -31,6 +31,8 @@
 using namespace donut::math;
 #endif
 
+static const uint32_t kPatchSize = 16;
+
 struct LimitFrame
 {
     float3 p;
