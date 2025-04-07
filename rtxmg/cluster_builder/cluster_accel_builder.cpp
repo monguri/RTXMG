@@ -921,7 +921,7 @@ void ClusterAccelBuilder::ComputeInstanceClusterTiling(uint32_t instanceIndex,
         state.setPipeline(GetComputeClusterTilingPSO(shaderPermutation));
         commandList->setComputeState(state);
 
-        commandList->dispatch(div_ceil(dispatchCount, kComputeClusterTilingWavesPerSurface), 1, 1);
+        commandList->dispatch(div_ceil(dispatchCount, kComputeClusterTilingWaves), 1, 1);
 
         // Save cluster offset for this instance
         ClusterDispatchType dispatchType = ClusterDispatchType::All;
@@ -948,7 +948,7 @@ void ClusterAccelBuilder::ComputeInstanceClusterTiling(uint32_t instanceIndex,
                 state.setPipeline(GetComputeClusterTilingPSO(shaderPermutation));
                 commandList->setComputeState(state);
 
-                commandList->dispatch(div_ceil(dispatchCount, kComputeClusterTilingWavesPerSurface), 1, 1);
+                commandList->dispatch(div_ceil(dispatchCount, kComputeClusterTilingWaves), 1, 1);
             }
             // Save cluster offset for this instance
             ClusterDispatchType dispatchType = ClusterDispatchType(i);

@@ -31,7 +31,7 @@
 #include "rtxmg/utils/box3.h"
 #include "nvrhi/nvrhiHLSL.h"
 
-static const uint32_t kComputeClusterTilingWavesPerSurface = 4;
+static const uint32_t kComputeClusterTilingWaves = 4;
 
 struct ComputeClusterTilingParams
 {

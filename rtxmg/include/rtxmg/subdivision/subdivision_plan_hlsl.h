@@ -36,10 +36,6 @@
 #include "rtxmg/subdivision/osd_ports/tmr/subdivisionNode.h"
 #include "patch_param.h"
 
-#ifndef SUBDIVISION_PLAN_UNROLL
-#define SUBDIVISION_PLAN_UNROLL
-#endif
-
 // translators for Tmr => Far types
 inline PatchDescriptorType
 RegularBasisType(SchemeType scheme)
@@ -339,10 +335,8 @@ void EvalBasisBSpline(float2 st, out float wP[16], out float wDs[16], out float 
         }
     }
 
-    SUBDIVISION_PLAN_UNROLL
     for (int i = 0; i < 4; ++i)
     {
-        SUBDIVISION_PLAN_UNROLL
         for (int j = 0; j < 4; ++j)
         {
             wP[4 * i + j] = sWeights[j] * tWeights[i];
@@ -360,7 +354,6 @@ inline void AdjustBSplineBoundaryWeights(int boundary, inout float w[16])
 
     if ((boundary & 1) != 0)
     {
-        SUBDIVISION_PLAN_UNROLL
         for (int i = 0; i < 4; ++i)
         {
             w[i + 8] -= w[i + 0];
@@ -370,7 +363,6 @@ inline void AdjustBSplineBoundaryWeights(int boundary, inout float w[16])
     }
     if ((boundary & 2) != 0)
     {
-        SUBDIVISION_PLAN_UNROLL
         for (int i = 0; i < 16; i += 4)
         {
             w[i + 1] -= w[i + 3];
@@ -380,7 +372,6 @@ inline void AdjustBSplineBoundaryWeights(int boundary, inout float w[16])
     }
     if ((boundary & 4) != 0)
     {
-        SUBDIVISION_PLAN_UNROLL
         for (int i = 0; i < 4; ++i)
         {
             w[i + 4] -= w[i + 12];
@@ -390,7 +381,6 @@ inline void AdjustBSplineBoundaryWeights(int boundary, inout float w[16])
     }
     if ((boundary & 8) != 0)
     {
-        SUBDIVISION_PLAN_UNROLL
         for (int i = 0; i < 16; i += 4)
         {
             w[i + 2] -= w[i + 0];
@@ -565,7 +555,6 @@ inline void EvaluatePatchBasis(PatchDescriptorType patchType,
 
     if (hasPoints)
     {
-        SUBDIVISION_PLAN_UNROLL
         for (int i = 0; i < 16; ++i)
         {
             wDs[i] *= d1Scale;
@@ -744,7 +733,7 @@ inline float CubicBSplineWeight(float t, uint32_t index)
 {
     float result = 0.0f;
     float factor = 1.0f;
-    SUBDIVISION_PLAN_UNROLL
+
     for (uint32_t i = 0; i < 4; ++i)
     {
         result += kBSplineWeights[4 * index + i] * factor;
@@ -767,7 +756,7 @@ inline float CubicBSplineDerivativeWeight(float t, uint32_t index)
 {
     float result = 0.0f;
     float factor = 1.0f;
-    SUBDIVISION_PLAN_UNROLL
+
     for (uint32_t i = 0; i < 3; ++i)
     {
         result += kDerivativeWeights[3 * index + i] * factor;

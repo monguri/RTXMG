@@ -33,7 +33,6 @@
 #define VIS_MODE_SURFACE 1
 
 #define PATCH_POINTS_WRITEABLE
-#define SUBDIVISION_PLAN_UNROLL [unroll]
 
 // Group atomics is significantly faster by reducing pressure on the global atomic
 // This reduces the global atomic by a factor of 4 (kComputeClusterTilingWavesPerSurface)
@@ -101,7 +100,7 @@ SamplerState s_HizSampler : register(s1);
 VK_BINDING(1, 1) Texture2D t_BindlessTextures[] : register(t0, space2);
 Texture2D<float> t_HiZBuffer[HIZ_MAX_LODS]: register(t0, space3);
 
-const static uint32_t nSamples = kComputeClusterTilingWavesPerSurface * kNumWaveSurfaceUVSamples;
+const static uint32_t nSamples = kComputeClusterTilingWaves * kNumWaveSurfaceUVSamples;
 groupshared LimitFrame samples[nSamples];
 static uint g_debugOutputSlot = 0;
 
@@ -257,7 +256,7 @@ float CalculateVisibility(SubdivisionEvaluatorHLSL subd, uint3 threadIdx)
     return visibility;
 }
 
-float CalculateEdgeVisibility(float visibility, uint32_t waveSampleOffset, uint3 threadIdx)
+float CalculateEdgeVisibility(uint32_t iLane, uint32_t waveSampleOffset, float visibility)
 {
 #if VIS_MODE == VIS_MODE_SURFACE
     return visibility;
@@ -275,8 +274,6 @@ float CalculateEdgeVisibility(float visibility, uint32_t waveSampleOffset, uint3
     //
     //          e0
     //
-
-    uint32_t iLane = threadIdx.x;
 
     // each lane is assigned to one of the 4 surface edges
     if (iLane > 3)
@@ -351,10 +348,13 @@ float CalculateEdgeVisibility(float visibility, uint32_t waveSampleOffset, uint3
 #endif
 }
 
-void WaveEvaluateBSplinePatch8(SubdivisionEvaluatorHLSL subd, 
-    TexcoordEvaluatorHLSL texcoordEval,
-    uint32_t iLane, uint32_t waveSampleOffset)
+void WaveEvaluateBSplinePatch8(uint32_t iWave,
+    uint32_t iLane,
+    SubdivisionEvaluatorHLSL subd,
+    TexcoordEvaluatorHLSL texcoordEval)
 {
+    uint32_t waveSampleOffset = kNumWaveSurfaceUVSamples * iWave;
+
     // always do the non-displaced evaluation first.  Displacement maps will perturb this calculation below
 #if SURFACE_TYPE == SURFACE_TYPE_ALL
     if (subd.IsPureBSplinePatch())
@@ -437,22 +437,20 @@ float CalculateEdgeRates(LimitFrame limitFrame)
     return -1; // should not Get here; uniform tess mode doesn't call this function
 }
 
-uint16_t EvaluateEdgeSegments(uint3 threadIdx, float visibility, float visibilityRateMultiplier, uint32_t waveSampleOffset)
+uint16_t EvaluateEdgeSegments(uint32_t iWave, uint32_t iLane, float visibility, float visibilityRateMultiplier)
 {
+    uint32_t waveSampleOffset = kNumWaveSurfaceUVSamples * iWave;
 #if TESS_MODE == TESS_MODE_UNIFORM
-    const int iLane = threadIdx.x;
     if (iLane < 4)
     {
         uint32_t segments = g_Params.edgeSegments[iLane];
-        float segmentVisibility = CalculateEdgeVisibility(visibility, waveSampleOffset, threadIdx);
+        float segmentVisibility = CalculateEdgeVisibility(iLane, waveSampleOffset, visibility);
 
         segments = float(segments) * (visibilityRateMultiplier + segmentVisibility * (1.f - visibilityRateMultiplier));
         return (uint16_t)clamp(segments, 1u, 1024u);
     }
     return 0;
 #else
-    const int iLane = threadIdx.x;
-
     float segmentRate = iLane < 4 ? CalculateEdgeRates(samples[waveSampleOffset + 2 * iLane + 1]) : .0f;
     if (iLane < kNumWaveSurfaceUVSamples)
     {
@@ -473,7 +471,7 @@ uint16_t EvaluateEdgeSegments(uint3 threadIdx, float visibility, float visibilit
         }
     }
 
-    float edgeVisibility = CalculateEdgeVisibility(visibility, waveSampleOffset, threadIdx);
+    float edgeVisibility = CalculateEdgeVisibility(iLane, waveSampleOffset, visibility);
     segmentRate *= (visibilityRateMultiplier + edgeVisibility * (1.f - visibilityRateMultiplier));
 
 #ifdef MAX_EDGES
@@ -510,12 +508,10 @@ void GathererWriteCluster(Cluster cluster, uint32_t clusterIndex, GridSampler gr
     u_ClusterShadingData[clusterIndex] = shadingData;
 }
 
-void WriteSurfaceWave(uint3 threadIdx, uint3 groupIdx, uint32_t iSurface, uint16_t edgeSegments, uint32_t waveSampleOffset)
+void WriteSurfaceWave(uint32_t iWave, uint32_t iLane, uint32_t iSurface, uint16_t edgeSegments)
 {
-    // PatchGatherer
-    const uint iLane = threadIdx.x;
-    const uint iWave = threadIdx.y;
-
+    uint32_t waveSampleOffset = kNumWaveSurfaceUVSamples * iWave;
+    
     GridSampler rSampler;
     rSampler.edgeSegments[0] = WaveReadLaneAt(edgeSegments, 0);
     rSampler.edgeSegments[1] = WaveReadLaneAt(edgeSegments, 1);
@@ -701,12 +697,12 @@ void WriteSurfaceWave(uint3 threadIdx, uint3 groupIdx, uint32_t iSurface, uint16
     }
 }
 
-[numthreads(kComputeClusterTilingThreadsX, kComputeClusterTilingWavesPerSurface, 1)]
+[numthreads(kComputeClusterTilingThreadsX, kComputeClusterTilingWaves, 1)]
 void main(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
 {
     const uint32_t iLane = threadIdx.x;
     const uint32_t iWave = threadIdx.y;
-    const uint32_t iSurface = kComputeClusterTilingWavesPerSurface * groupIdx.x + iWave + g_Params.surfaceStart;
+    const uint32_t iSurface = kComputeClusterTilingWaves * groupIdx.x + iWave + g_Params.surfaceStart;
 
 #if ENABLE_GROUP_ATOMICS
     if (iLane == 0 && iWave == 0)
@@ -774,12 +770,10 @@ void main(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
     //
     //          e0
     //
-
-    uint32_t waveSampleOffset = kNumWaveSurfaceUVSamples * iWave;
-    WaveEvaluateBSplinePatch8(subd, texcoordEval, iLane, waveSampleOffset);
+    WaveEvaluateBSplinePatch8(iWave, iLane, subd, texcoordEval);
 
     const float tessFactor = g_Params.coarseTessellationRate / g_Params.fineTessellationRate;
 
-    uint16_t edgeSegments = EvaluateEdgeSegments(threadIdx, visibility, tessFactor, waveSampleOffset);
-    WriteSurfaceWave(threadIdx, groupIdx, iSurface, edgeSegments, waveSampleOffset);
+    uint16_t edgeSegments = EvaluateEdgeSegments(iWave, iLane, visibility, tessFactor);
+    WriteSurfaceWave(iWave, iLane, iSurface, edgeSegments);
 }
