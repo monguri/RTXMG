@@ -394,7 +394,7 @@ MaterialSample RTXMG_EvaluateSceneMaterial(GeometrySample gs, float3 geometryNor
     }
     else if (colorMode == ColorMode::BASE_COLOR)
     {
-        if (g_RenderParams.shadingMode == AO)
+        if (g_RenderParams.shadingMode == ShadingMode::AO)
         {
             result.baseColor = 0.8;
         }
@@ -417,7 +417,7 @@ MaterialSample RTXMG_EvaluateSceneMaterial(GeometrySample gs, float3 geometryNor
             result.hasMetalRoughParams = true;
             // Compute the BRDF inputs for the metal-rough model
             // https://github.com/KhronosGroup/glTF/tree/master/specification/2.0#metal-brdf-and-dielectric-brdf
-            if (g_RenderParams.shadingMode == PT)
+            if (g_RenderParams.shadingMode == ShadingMode::PT)
             {
                 // the metalness map is arriving as "emissive" to re-use donut materials
                 // and specular maps arrive in the occlusion texture.
@@ -696,7 +696,7 @@ struct Attributes
     float2 u = convertDirToTexCoords(d, g_RenderParams.envmapRotation);
 
     float3 lightContribution;
-    if (g_RenderParams.shadingMode == PT)
+    if (g_RenderParams.shadingMode == ShadingMode::PT)
     {
         if (hasEnvMap)
         {
@@ -712,7 +712,7 @@ struct Attributes
         lightContribution = g_RenderParams.missColor;
     }
 
-    if (g_RenderParams.shadingMode == PT)
+    if (g_RenderParams.shadingMode == ShadingMode::PT)
     {
         float brdfPdf = payload.pdf;
         uint bounce = payload.bounce;
@@ -751,7 +751,7 @@ struct Attributes
         uint2 dispatchPixel = DispatchRaysIndex().xy;
         uint dispatchIndex = dispatchPixel.x + dispatchDims.x * dispatchPixel.y;
 
-        if (g_RenderParams.shadingMode != PT || payload.bounce == 0)
+        if (g_RenderParams.shadingMode != ShadingMode::PT || payload.bounce == 0)
         {
             u_HitResult[dispatchIndex] = DefaultHitResult();
 
@@ -840,7 +840,7 @@ float3 SampleDirect(MaterialSample material, float3 p, float3 gN, float3 N, floa
         uint2 dispatchPixel = DispatchRaysIndex().xy;
         uint dispatchIndex = dispatchPixel.x + dispatchDims.x * dispatchPixel.y;
 
-        const bool writePrimarySurfaceGBuffer = (g_RenderParams.shadingMode != PT || payload.bounce == 0);
+        const bool writePrimarySurfaceGBuffer = (g_RenderParams.shadingMode != ShadingMode::PT || payload.bounce == 0);
 
         if (writePrimarySurfaceGBuffer)
         {
@@ -863,7 +863,7 @@ float3 SampleDirect(MaterialSample material, float3 p, float3 gN, float3 N, floa
             u_Roughness[dispatchPixel] = ir.ms.roughness;
         }
 
-        if (g_RenderParams.shadingMode != PT)
+        if (g_RenderParams.shadingMode != ShadingMode::PT)
         {
             // Non-PT mode clear to far Z
             u_SpecularHitT[dispatchPixel] = g_RenderParams.zFar;
@@ -882,12 +882,12 @@ float3 SampleDirect(MaterialSample material, float3 p, float3 gN, float3 N, floa
     }
 
 
-    if (g_RenderParams.shadingMode == PRIMARY_RAYS)
+    if (g_RenderParams.shadingMode == ShadingMode::PRIMARY_RAYS)
     {
         pathWeight = ir.ms.baseColor;
         payload.pathWeight = ToRGBe9995(pathWeight);
     }
-    else if (g_RenderParams.shadingMode == AO)
+    else if (g_RenderParams.shadingMode == ShadingMode::AO)
     {
         uint spp = g_RenderParams.denoiserMode != DenoiserMode::None ? 1 : g_RenderParams.spp;
 
@@ -899,7 +899,7 @@ float3 SampleDirect(MaterialSample material, float3 p, float3 gN, float3 N, floa
         payload.pathWeight = ToRGBe9995(pathWeight);
         payload.seed = seed;
     }
-    else if (g_RenderParams.shadingMode == PT)
+    else if (g_RenderParams.shadingMode == ShadingMode::PT)
     {
         uint32_t seed = payload.seed;
         float3 V = -WorldRayDirection();
@@ -922,7 +922,6 @@ float3 SampleDirect(MaterialSample material, float3 p, float3 gN, float3 N, floa
             float3 L = 0;
 
             float3 indirectWeight;
-
 
             indirectWeight = BRDFSample(ir.ms, ir.gn, ir.n, V, L, samplePdf, seed);
             pathWeight *= indirectWeight;
@@ -1085,7 +1084,7 @@ uint TimeDiff(uint startTime, uint endTime)
 
         float3 pathWeight = 1.f;
 
-        if (g_RenderParams.shadingMode == PT)
+        if (g_RenderParams.shadingMode == ShadingMode::PT)
         {
             float3 pathContribution = 0.f;
             float pdf = 0.f;
@@ -1115,7 +1114,7 @@ uint TimeDiff(uint startTime, uint endTime)
             }
             result += pathContribution;
         }
-        else if (g_RenderParams.shadingMode == AO)
+        else if (g_RenderParams.shadingMode == ShadingMode::AO)
         {
             TraceRadianceAO(seed, subpixelIndex2nd, rayOrigin, rayDirection, pathWeight, hitT);
             result += pathWeight;

@@ -250,7 +250,7 @@ public:
         if (renderer.GetShowMicroTriangles())
             return;
 
-        ShadingMode shadingMode = ShadingMode((int(renderer.GetShadingMode()) + 1) % ShadingMode::SHADING_MODE_COUNT);
+        ShadingMode shadingMode = ShadingMode((int(renderer.GetShadingMode()) + 1) % int(ShadingMode::SHADING_MODE_COUNT));
         renderer.SetShadingMode(shadingMode);
     }
 
@@ -260,7 +260,7 @@ public:
         if (renderer.GetShowMicroTriangles())
             return;
 
-        TonemapOperator op = TonemapOperator((int(renderer.GetTonemapOperator()) + 1) % TonemapOperator::Count);
+        TonemapOperator op = TonemapOperator((int(renderer.GetTonemapOperator()) + 1) % int(TonemapOperator::Count));
         renderer.SetTonemapOperator(op);
     }
 
@@ -290,7 +290,7 @@ public:
         if (renderer.GetShowMicroTriangles())
             return;
 
-        ColorMode colorMode = ColorMode(((int)renderer.GetColorMode() + ColorMode::COLOR_MODE_COUNT + delta) % ColorMode::COLOR_MODE_COUNT);
+        ColorMode colorMode = ColorMode((int(renderer.GetColorMode()) + int(ColorMode::COLOR_MODE_COUNT) + delta) % int(ColorMode::COLOR_MODE_COUNT));
         renderer.SetColorMode(colorMode);
     }
 

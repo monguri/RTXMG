@@ -634,7 +634,7 @@ void UserInterface::BuildUIMain(int2 screenLayoutSize)
         ShadingMode effectiveShadingMode = renderer.GetEffectiveShadingMode();
         if (effectiveShadingMode == ShadingMode::PT)
         {
-            int maxBounces = std::max(1, std::min(10, (int)renderer.GetPTMaxBounces()));
+            int maxBounces = std::max(1, std::min(10, renderer.GetPTMaxBounces()));
             if (ImGui::InputInt("Max Bounces", &maxBounces, 1, 10))
             {
                 renderer.SetPTMaxBounces(maxBounces);
@@ -1043,7 +1043,7 @@ void UserInterface::BuildUIMain(int2 screenLayoutSize)
 
     if (stats::evaluatorSamplers.m_topologyQualityButtonPressed)
     {
-        renderer.SetColorMode(COLOR_BY_TOPOLOGY);
+        renderer.SetColorMode(ColorMode::COLOR_BY_TOPOLOGY);
     }
 
     float profilerWidth = m_profiler.controllerWindow.size.x;

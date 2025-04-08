@@ -21,9 +21,9 @@
  */
 #pragma once
 
-enum ShadingMode { PRIMARY_RAYS = 0, AO, PT, SHADING_MODE_COUNT };
+enum class ShadingMode { PRIMARY_RAYS = 0, AO, PT, SHADING_MODE_COUNT };
 
-enum ColorMode
+enum class ColorMode
 {
     BASE_COLOR = 0,
     COLOR_BY_NORMAL,
@@ -40,7 +40,7 @@ enum ColorMode
     COLOR_MODE_COUNT
 };
 
-enum TonemapOperator
+enum class TonemapOperator
 {
     Linear = 0,
     Srgb,
@@ -92,7 +92,7 @@ constexpr auto kColorModeNames = std::to_array<const char *>(
     "MicroTri Area",
     "Topology Quality"
 });
-static_assert(kColorModeNames.size() == ColorMode::COLOR_MODE_COUNT);
+static_assert(kColorModeNames.size() == size_t(ColorMode::COLOR_MODE_COUNT));
 
 constexpr auto kToneMapOperatorNames = std::to_array<const char*>(
 {
@@ -101,7 +101,7 @@ constexpr auto kToneMapOperatorNames = std::to_array<const char*>(
     "ACES",
     "Hable"
 });
-static_assert(kToneMapOperatorNames.size() == TonemapOperator::Count);
+static_assert(kToneMapOperatorNames.size() == size_t(TonemapOperator::Count));
 
 constexpr auto kShadingModeNames = std::to_array<const char*>(
 {
@@ -109,7 +109,7 @@ constexpr auto kShadingModeNames = std::to_array<const char*>(
     "Ambient Occlusion",
     "Path Tracing"
 });
-static_assert(kShadingModeNames.size() == ShadingMode::SHADING_MODE_COUNT);
+static_assert(kShadingModeNames.size() == size_t(ShadingMode::SHADING_MODE_COUNT));
 
 constexpr auto kMvecDisplacementNames = std::to_array<const char*>(
 {
