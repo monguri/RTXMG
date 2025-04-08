@@ -743,23 +743,33 @@ struct Attributes
     payload.hitT = 1.#INF;
     payload.instanceID = ~0u;
 
-    bool clearGBuffer = g_RenderParams.denoiserMode != DenoiserMode::None && (g_RenderParams.shadingMode != PT || payload.bounce == 0);
+    bool clearGBuffer = g_RenderParams.denoiserMode != DenoiserMode::None;
     if (clearGBuffer)
     {
         // Write no hit
         uint2 dispatchDims = DispatchRaysDimensions().xy;
         uint2 dispatchPixel = DispatchRaysIndex().xy;
         uint dispatchIndex = dispatchPixel.x + dispatchDims.x * dispatchPixel.y;
-        u_HitResult[dispatchIndex] = DefaultHitResult();
 
-        // Clear gbuffer
-        // using linear depth
-        u_Depth[dispatchPixel] = g_RenderParams.zFar;
-        u_Normal[dispatchPixel] = float3(0.0f, 0.0f, 0.0f);
-        u_Albedo[dispatchPixel] = float3(0.0f, 0.0f, 0.0f);
-        u_Specular[dispatchPixel] = float3(0.0f, 0.0f, 0.0f);
-        u_SpecularHitT[dispatchPixel] = g_RenderParams.zFar;
-        u_Roughness[dispatchPixel] = 0.0f;
+        if (g_RenderParams.shadingMode != PT || payload.bounce == 0)
+        {
+            u_HitResult[dispatchIndex] = DefaultHitResult();
+
+            // Clear gbuffer
+            // using linear depth
+            u_Depth[dispatchPixel] = g_RenderParams.zFar;
+            u_Normal[dispatchPixel] = float3(0.0f, 0.0f, 0.0f);
+            u_Albedo[dispatchPixel] = float3(0.0f, 0.0f, 0.0f);
+            u_Specular[dispatchPixel] = float3(0.0f, 0.0f, 0.0f);
+            u_Roughness[dispatchPixel] = 0.0f;
+        }
+
+        // If PT mode, then if we miss on bounce 0 or 1, then clear to zFar
+        // If non-PT mode, then only bounce 0, clear to ZFar
+        if (payload.bounce <= 1)
+        {
+            u_SpecularHitT[dispatchPixel] = g_RenderParams.zFar;
+        }
     }
 }
 
@@ -822,36 +832,47 @@ float3 SampleDirect(MaterialSample material, float3 p, float3 gN, float3 N, floa
 
     float3 pathWeight = 1.f;
 
-    const bool writeGBuffer = g_RenderParams.denoiserMode != DenoiserMode::None &&
-        (g_RenderParams.shadingMode != PT || payload.bounce == 0);
-
     float wfWeight = g_RenderParams.enableWireframe ? WireframeWeight(ir) : 1.0f;
 
-    if (writeGBuffer)
+    if (g_RenderParams.denoiserMode != DenoiserMode::None)
     {
         uint2 dispatchDims = DispatchRaysDimensions().xy;
         uint2 dispatchPixel = DispatchRaysIndex().xy;
         uint dispatchIndex = dispatchPixel.x + dispatchDims.x * dispatchPixel.y;
 
-        HitResult hitResult;
-        hitResult.instanceId = payload.instanceID;
-        hitResult.surfaceIndex = ir.surfaceIndex;
-        hitResult.surfaceUV = ir.surfaceUV;
-        hitResult.texcoord = ir.texcoord;
-        u_HitResult[dispatchIndex] = hitResult;
+        const bool writePrimarySurfaceGBuffer = (g_RenderParams.shadingMode != PT || payload.bounce == 0);
 
+        if (writePrimarySurfaceGBuffer)
+        {
+            HitResult hitResult;
+            hitResult.instanceId = payload.instanceID;
+            hitResult.surfaceIndex = ir.surfaceIndex;
+            hitResult.surfaceUV = ir.surfaceUV;
+            hitResult.texcoord = ir.texcoord;
+            u_HitResult[dispatchIndex] = hitResult;
 
-        float depth = dot(normalize(g_RenderParams.W), ir.p - g_RenderParams.eye);
-        u_Depth[dispatchPixel] = depth;
-        u_Normal[dispatchPixel] = ir.n;
+            float depth = dot(normalize(g_RenderParams.W), ir.p - g_RenderParams.eye);
+            u_Depth[dispatchPixel] = depth;
+            u_Normal[dispatchPixel] = ir.n;
 
-        float3 V = -WorldRayDirection();
-        FresnelBlend brdf = MakeFresnelBlend(ir.ms.baseColor, ir.ms.specularF0, ir.ms.metalness, ir.ms.roughness);
-        u_Albedo[dispatchPixel] = brdf.m_diffuse.m_albedo * wfWeight;
-        float3 spec = BRDFEnvApprox(brdf, ir.n, V);
-        u_Specular[dispatchPixel] = spec * wfWeight;
-        u_SpecularHitT[dispatchPixel] = ir.hitT;
-        u_Roughness[dispatchPixel] = ir.ms.roughness;
+            float3 V = -WorldRayDirection();
+            FresnelBlend brdf = MakeFresnelBlend(ir.ms.baseColor, ir.ms.specularF0, ir.ms.metalness, ir.ms.roughness);
+            u_Albedo[dispatchPixel] = brdf.m_diffuse.m_albedo * wfWeight;
+            float3 spec = BRDFEnvApprox(brdf, ir.n, V);
+            u_Specular[dispatchPixel] = spec * wfWeight;
+            u_Roughness[dispatchPixel] = ir.ms.roughness;
+        }
+
+        if (g_RenderParams.shadingMode != PT)
+        {
+            // Non-PT mode clear to far Z
+            u_SpecularHitT[dispatchPixel] = g_RenderParams.zFar;
+        }
+        else if (payload.bounce == 1)
+        {
+            // We want to write the hit distance from primary surface to specular hit
+            u_SpecularHitT[dispatchPixel] = ir.hitT;
+        }
     }
 
     if (wfWeight == 0.f)
