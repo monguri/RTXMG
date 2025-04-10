@@ -14,7 +14,7 @@
 
 ## Overview
 
-RTX Mega Geometry (RTXMG) is a DX12 code sample that shows how to use NvAPI to quickly
+RTX Mega Geometry (RTX MG) is a DX12 code sample that shows how to use NvAPI to quickly
 build ray-tracing acceleration structures for subdivision surfaces with structured
 clusters. It contains a reference HLSL path tracing demo app that can be used as a
 learning tool to begin integration with your own graphics engine.
@@ -125,7 +125,7 @@ please cite the project.
 
 BibTex:
 ```bibtex
-@online{RTXMG,
+@online{RTX MG,
    title   = {{{NVIDIA}}\textregistered{} {RTX Mega Geometry}},
    author  = {{NVIDIA}},
    year    = 2025,
@@ -136,7 +136,7 @@ BibTex:
 
 ## Known Issues
 
-1. The RTXMG SDK does not currently support unstructured clusters or rasterization.
+1. The RTX MG SDK does not currently support unstructured clusters or rasterization.
 
 ## License
 

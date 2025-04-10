@@ -1,4 +1,4 @@
-# RTXMG SDK Change Log
+# RTX Mega Geometry SDK Change Log
 
 ## 0.9.2
 
