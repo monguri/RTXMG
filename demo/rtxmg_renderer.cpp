@@ -136,7 +136,7 @@ RTXMGRenderer::RTXMGRenderer(Options const& opts)
         nvrhi::BindingLayoutItem::Texture_UAV(10),       // debug
         nvrhi::BindingLayoutItem::Texture_UAV(11),       // debug
 #endif
-#if ENABLE_PIXEL_DEBUG
+#if ENABLE_SHADER_DEBUG
         nvrhi::BindingLayoutItem::StructuredBuffer_UAV(12),  // pixel debug buffer
 #endif
         nvrhi::BindingLayoutItem::TypedBuffer_UAV(13),       // Timeview buffer
@@ -231,7 +231,7 @@ void RTXMGRenderer::ComputeMotionVectors(nvrhi::ICommandList* commandList)
         .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(4, m_scene->GetGeometryBuffer()))
         .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(5, m_scene->GetMaterialBuffer()))
         .addItem(nvrhi::BindingSetItem::Texture_UAV(0, m_outputTextures[uint32_t(OutputTexture::MotionVectors)]))
-#if ENABLE_PIXEL_DEBUG
+#if ENABLE_SHADER_DEBUG
         .addItem(nvrhi::BindingSetItem::StructuredBuffer_UAV(1, m_motionVectorsPixelDebugBuffer))
 #endif
         .addItem(nvrhi::BindingSetItem::Sampler(0, m_commonPasses->m_LinearWrapSampler));
@@ -417,7 +417,7 @@ void RTXMGRenderer::CreateOutputs(nvrhi::ICommandList *commandList)
 
     UpdateDisplayTexture(m_displayTexture, nvrhi::Format::RGBA8_UNORM, "Display");
 
-#if ENABLE_PIXEL_DEBUG    
+#if ENABLE_SHADER_DEBUG
     if (!m_pixelDebugBuffer.GetBuffer())
     {
         m_pixelDebugBuffer.Create(64, "PixelDebugBuffer", GetDevice());
@@ -510,7 +510,7 @@ void RTXMGRenderer::Launch(nvrhi::ICommandList* commandList,
             nvrhi::BindingSetItem::Texture_UAV(10, m_outputTextures[index(OutputTexture::Debug3)]),
             nvrhi::BindingSetItem::Texture_UAV(11, m_outputTextures[index(OutputTexture::Debug4)]),
         #endif
-        #if ENABLE_PIXEL_DEBUG
+        #if ENABLE_SHADER_DEBUG
             nvrhi::BindingSetItem::StructuredBuffer_UAV(12, m_pixelDebugBuffer),
         #endif
             nvrhi::BindingSetItem::TypedBuffer_UAV(13, m_timeViewBuffer),
@@ -522,6 +522,10 @@ void RTXMGRenderer::Launch(nvrhi::ICommandList* commandList,
     }
 
     {
+#if ENABLE_SHADER_DEBUG
+        commandList->clearBufferUInt(m_pixelDebugBuffer, 0);
+        commandList->clearBufferUInt(m_motionVectorsPixelDebugBuffer, 0);
+#endif
         nvrhi::utils::ScopedMarker marker(commandList, "Ray Tracing Pass");
 
         LightingConstants constants = {};
@@ -1142,48 +1146,11 @@ void RTXMGRenderer::UpdateAccelerationStructures(const TessellatorConfig &tessCo
 
 void RTXMGRenderer::DumpPixelDebugBuffers(nvrhi::ICommandList* commandList)
 {
-#if ENABLE_PIXEL_DEBUG
-    auto logLambda = [](std::ostream& ss, const PixelDebugElement& e)
-        {
-            if (e.payloadType == PixelDebugElement::PayloadType_None)
-                return false;
-
-            ss << "[Line:" << std::dec << e.lineNumber << "] ";
-
-            if (e.payloadType >= PixelDebugElement::PayloadType_Float &&
-                e.payloadType <= PixelDebugElement::PayloadType_Float4)
-            {
-                uint32_t numVectorElements = (e.payloadType - uint32_t(PixelDebugElement::PayloadType_Float)) + 1;
-
-                ss << std::setprecision(12) << e.floatData.data()[0];
-                for (uint32_t i = 1; i < numVectorElements; i++)
-                    ss << ", " << e.floatData.data()[i];
-            }
-            else if (e.payloadType >= PixelDebugElement::PayloadType_Int &&
-                e.payloadType <= PixelDebugElement::PayloadType_Int4)
-            {
-                uint32_t numVectorElements = (e.payloadType - uint32_t(PixelDebugElement::PayloadType_Int)) + 1;
-                ss << std::dec << static_cast<int>(e.uintData.data()[0]) << std::hex << "(0x" << e.uintData.data()[0] << ")";
-                for (uint32_t i = 1; i < numVectorElements; i++)
-                    ss << ", " << std::dec << static_cast<int>(e.uintData.data()[i]) << std::hex << "(0x" << e.uintData.data()[i] << ")";
-            }
-            else if (e.payloadType >= PixelDebugElement::PayloadType_Uint &&
-                e.payloadType <= PixelDebugElement::PayloadType_Uint4)
-            {
-                uint32_t numVectorElements = (e.payloadType - uint32_t(PixelDebugElement::PayloadType_Uint)) + 1;
-                ss << std::dec << e.uintData.data()[0] << std::hex << "(0x" << e.uintData.data()[0] << ")";
-                for (uint32_t i = 1; i < numVectorElements; i++)
-                    ss << ", " << std::dec << e.uintData.data()[i] << std::hex << "(0x" << e.uintData.data()[i] << ")";
-            }
-
-            return true;
-        };
-
-
+#if ENABLE_SHADER_DEBUG
     log::info("Raytracing Pixel Debug: %d, %d", m_params.debugPixel.x, m_params.debugPixel.y);
-    m_pixelDebugBuffer.Log(commandList, logLambda, { .wrap = false, .header = false, .elementIndex = false });
-
+    m_pixelDebugBuffer.Log(commandList, ShaderDebugElement::OutputLambda, { .wrap = false, .header = false, .elementIndex = false, .startIndex = 1 });
+    
     log::info("Motion Vector Pixel Debug: %d, %d", m_params.debugPixel.x, m_params.debugPixel.y);
-    m_motionVectorsPixelDebugBuffer.Log(commandList, logLambda, { .wrap = false, .header = false, .elementIndex = false });
+    m_motionVectorsPixelDebugBuffer.Log(commandList, ShaderDebugElement::OutputLambda, { .wrap = false, .header = false, .elementIndex = false, .startIndex = 1 });
 #endif
 }

@@ -105,6 +105,8 @@ private:
     bool m_dumpDebugBuffer = false;
     bool m_dumpPixelDebug = false;
 
+    std::array<int, 2> m_debugSurfaceLaneIndex = { -1, -1 };
+
     // DLSS State
 #if DONUT_WITH_STREAMLINE
     using StreamlineInterface = donut::app::StreamlineInterface;
@@ -193,6 +195,7 @@ public:
     void SaveScreenshot();
     void DumpDebugBuffer();
     void ReloadShaders() { m_reloadShaders = true; }
+    void RebuildAS() { m_accelBuilderNeedsUpdate = true; }
 
     TessellatorConfig::MemorySettings GetTessMemSettings() const { return m_args.tessMemorySettings; }
     void SetTessMemSettings(const TessellatorConfig::MemorySettings& settings);
@@ -238,6 +241,8 @@ public:
 
     bool GetAccelBuildLoggingEnabled() const { return m_args.enableAccelBuildLogging; }
     void SetAccelBuildLoggingEnabled(bool enabled) { m_args.enableAccelBuildLogging = enabled; }
+
+    std::array<int, 2>& GetDebugSurfaceLaneIndex() { return m_debugSurfaceLaneIndex; }
 
     // Desired denoiser mode
     void SetDenoiserMode(DenoiserMode denoiserMode);

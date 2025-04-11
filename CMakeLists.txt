@@ -97,6 +97,7 @@ list(APPEND RTXMG_SHADERS_IGNORED_INCLUDES
     "cstdio"
     "stdio.h"
     "cmath"
+    "ostream"
     "rtxmg/utils/buffer.h"
 )
 

@@ -151,12 +151,14 @@ public:
         return outData;
     }
 
-    void OutputStream(nvrhi::ICommandList* commandList, std::stringstream& ss, OutputLambdaType outputElementLambda, bool inlineLog, vectorlog::FormatOptions options = {} )
+    void OutputStream(nvrhi::ICommandList* commandList, OutputLambdaType outputElementLambda, std::ostream* optOutputStream = nullptr, vectorlog::FormatOptions options = {})
     {
         auto data = Download(commandList);
 
         if (options.header)
         {
+            std::stringstream ss;
+
             const nvrhi::BufferDesc& desc = m_buffer->getDesc();
             size_t numElements = data.size();
 
@@ -164,21 +166,20 @@ public:
                 << "(n:" << data.size() << " bytes: " << data.size() * sizeof(data[0]) << ")"
                 << " printing " << options.startIndex << " to " << (options.startIndex + options.count);
 
-            vectorlog::EndLine(ss, inlineLog);
+            vectorlog::EndLine(ss, optOutputStream);
         }
         
-        vectorlog::OutputStream(data, ss, outputElementLambda, inlineLog, options);
+        vectorlog::OutputStream(data, outputElementLambda, optOutputStream, options);
     }
 
-    void OutputStream(nvrhi::ICommandList* commandList, std::stringstream& ss, vectorlog::FormatOptions options = {})
+    void OutputStream(nvrhi::ICommandList* commandList, std::ostream& outputStream, vectorlog::FormatOptions options = {})
     {
-        OutputStream(commandList, ss, vectorlog::OutputElement<T>, false, options);
+        OutputStream(commandList, vectorlog::OutputElement<T>, &outputStream, options);
     }
 
     void Log(nvrhi::ICommandList* commandList, OutputLambdaType outputElementLambda, vectorlog::FormatOptions options = {})
     {
-        std::stringstream ss;
-        OutputStream(commandList, ss, outputElementLambda, true, options);
+        OutputStream(commandList, outputElementLambda, nullptr, options);
     }
 
     void Log(nvrhi::ICommandList* commandList, vectorlog::FormatOptions options = {})

@@ -30,7 +30,6 @@
 using namespace donut::math;
 #endif
 
-#define ENABLE_PIXEL_DEBUG 0
 #define ENABLE_DUMP_FLOAT 0
 
 #define RTXMG_NVAPI_SHADER_EXT_SLOT 1000

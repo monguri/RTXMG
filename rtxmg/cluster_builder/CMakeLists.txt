@@ -3,11 +3,6 @@ set(folder RTXMG)
 
 include ("${DONUT_DIR}/compileshaders.cmake")
 
-OPTION(ENABLE_ACCEL_BUILDER_DEBUG "enable printing of raw debug buffers during acceleration builds" OFF)
-if (ENABLE_ACCEL_BUILDER_DEBUG)
-    add_compile_definitions(ENABLE_ACCEL_BUILDER_DEBUG=${ENABLE_ACCEL_BUILDER_DEBUG})
-endif()
-
 file(GLOB shaders "shaders/*" "../include/rtxmg/${lib}/*.hlsli")
 file(GLOB sources "*.cpp" "../include/rtxmg/${lib}/*.h" *.cfg)
 

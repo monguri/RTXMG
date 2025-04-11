@@ -37,7 +37,8 @@ struct ComputeClusterTilingParams
 {
     uint32_t surfaceStart; //inclusive
     uint32_t surfaceEnd; //exclusive
-    uint2 pad0;
+    uint32_t debugSurfaceIndex;
+    uint32_t debugLaneIndex;
     
     float4x4 matWorldToClip;
     float3x4 localToWorld;

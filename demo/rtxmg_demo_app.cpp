@@ -543,7 +543,11 @@ bool RTXMGDemoApp::MouseButtonUpdate(int button, int action, int mods)
         double mousex = 0, mousey = 0;
         glfwGetCursorPos(GetDeviceManager()->GetWindow(), &mousex, &mousey);
 
-        m_renderParams.debugPixel = int2(int(mousex), int(mousey));
+        float2 renderScale = float2(m_renderSize.x, m_renderSize.y) / float2(m_displaySize.x, m_displaySize.y);
+        float2 mousePos = float2(mousex, mousey);
+        float2 debugPixel = mousePos * renderScale;
+
+        m_renderParams.debugPixel = int2(debugPixel.x, debugPixel.y);
 
         m_dumpPixelDebug = true;
     }
@@ -811,6 +815,7 @@ void RTXMGDemoApp::Render(nvrhi::IFramebuffer* framebuffer)
     {
         GetDevice()->waitForIdle();
 
+        m_accelBuilderNeedsUpdate = true;
         renderer.ReloadShaders();
 
         m_lerpVerticesPSO.Reset();
@@ -859,7 +864,9 @@ void RTXMGDemoApp::Render(nvrhi::IFramebuffer* framebuffer)
                 .clusterPattern = (ClusterPattern)m_renderParams.clusterPattern,
                 .displacementScale = m_renderParams.globalDisplacementScale,
                 .camera = &m_tesselationCamera,
-                .zbuffer = renderer.GetZBuffer()
+                .zbuffer = renderer.GetZBuffer(),
+                .debugSurfaceIndex = m_debugSurfaceLaneIndex[0],
+                .debugLaneIndex = m_debugSurfaceLaneIndex[1],
             };
 
             renderer.UpdateAccelerationStructures(tessConfig, m_BuildStats, GetFrameIndex(), m_commandList);
@@ -1155,27 +1162,14 @@ void RTXMGDemoApp::DoDumpDebugBuffer(std::string const& filepath)
     }
     else
     {
-        std::vector<float4> debugContents = GetRenderer().GetAccelBuilder()->GetDebugBuffer().Download(m_commandList);
+        auto debugContents = GetRenderer().GetAccelBuilder()->GetDebugBuffer().Download(m_commandList);
 
         log::info("accel builder debug contents: ");
-        int idx = 0;
-        for (const auto& v : debugContents)
-        {
-            log::info("  [%d]: %f %f %f %f", idx++, v.x, v.y, v.z, v.w);
-            if (idx > 20) break;
-        }
-        std::ofstream debug_dump(filepath);
-        idx = 0;
-        for (const auto& v : debugContents)
-        {
-            char indexbuf[16];
-            sprintf(indexbuf, "[%d]: ", idx++);
-            debug_dump << std::setw(8) << std::right << indexbuf
-                << std::setw(10) << std::left << v.x << " "
-                << std::setw(10) << std::left << v.y << " "
-                << std::setw(10) << std::left << v.z << " "
-                << std::setw(10) << std::left << v.w << std::endl;
-        }
+        
+        vectorlog::OutputStream(debugContents, ShaderDebugElement::OutputLambda, nullptr, { .wrap = false, .header = false, .elementIndex = false, .startIndex = 1 });
+
+        std::ofstream fileStream(filepath);
+        vectorlog::OutputStream(debugContents, ShaderDebugElement::OutputLambda, &fileStream, { .wrap = false, .header = false, .elementIndex = false, .startIndex = 1 });
     }
 }
 

@@ -75,7 +75,7 @@ ClusterAccelBuilder::ClusterAccelBuilder(donut::engine::ShaderFactory& shaderFac
     , m_device(device)
 {
     m_tessellationCountersBuffer.Create(kTessBufferFrameCount, "tesselation counters", m_device);
-    m_debugBuffer.Create(65536, "debug", m_device, nvrhi::Format::RGBA32_FLOAT);
+    m_debugBuffer.Create(64, "ClusterAccelDebug", m_device);
         
     //////////////////////////////////////////////////
     // Parameter buffers for shaders
@@ -613,10 +613,11 @@ void ClusterAccelBuilder::BuildStructuredCLASes(ClusterAccels& accels, uint32_t 
 
 void ClusterAccelBuilder::FillInstanceClusters(const RTXMGScene& scene, ClusterAccels& accels, nvrhi::ICommandList* commandList)
 {
-#if ENABLE_ACCEL_BUILDER_DEBUG
-    commandList->clearBufferUInt(m_debugBuffer, 0);
-#endif
-
+    if (m_tessellatorConfig.hasValidDebugIndex())
+    {
+        commandList->clearBufferUInt(m_debugBuffer, 0);
+    }
+    
     const auto& subdMeshes = scene.GetSubdMeshes();
     const auto& instances = scene.GetSubdMeshInstances();
 
@@ -760,14 +761,11 @@ void ClusterAccelBuilder::FillInstanceClusters(const RTXMGScene& scene, ClusterA
 
     stats::clusterAccelSamplers.fillClustersTime.Stop();
 
-#if ENABLE_ACCEL_BUILDER_DEBUG
-    std::vector<math::float4> data;
-    data = m_debugBuffer.Download(commandList);
-    for (int idx = 0; idx < 12; idx++)
+    if (m_tessellatorConfig.hasValidDebugIndex())
     {
-        donut::log::info("%d: %f %f %f %f", idx, data[idx].x, data[idx].y, data[idx].z, data[idx].w);
+        donut::log::info("Fill clusters Debug");
+        m_debugBuffer.Log(commandList, ShaderDebugElement::OutputLambda, { .wrap = false, .header = false, .elementIndex = false, .startIndex = 1 });
     }
-#endif
 }
 
 void ClusterAccelBuilder::ComputeInstanceClusterTiling(uint32_t instanceIndex, 
@@ -783,7 +781,14 @@ void ClusterAccelBuilder::ComputeInstanceClusterTiling(uint32_t instanceIndex,
     const nvrhi::BufferRange& tessCounterRange,
     nvrhi::ICommandList* commandList)
 {
+    if (m_tessellatorConfig.hasValidDebugIndex())
+    {
+        commandList->clearBufferUInt(m_debugBuffer, 0);
+    }
+
     ComputeClusterTilingParams params = {};
+    params.debugSurfaceIndex = uint32_t(m_tessellatorConfig.debugSurfaceIndex);
+    params.debugLaneIndex = uint32_t(m_tessellatorConfig.debugLaneIndex);
     params.matWorldToClip = m_tessellatorConfig.camera->GetProjectionMatrix() * m_tessellatorConfig.camera->GetViewMatrix();
     affineToColumnMajor(localToWorld, params.localToWorld.m_data); // params.localToWorld;
     params.viewportSize.x = float(m_tessellatorConfig.viewportSize.x);
@@ -955,7 +960,12 @@ void ClusterAccelBuilder::ComputeInstanceClusterTiling(uint32_t instanceIndex,
             CopyClusterOffset(instanceIndex, dispatchType, tessCounterRange, commandList);
         }
     }
-    
+
+    if (m_tessellatorConfig.hasValidDebugIndex())
+    {
+        donut::log::info("Cluster Tiling Debug");
+        m_debugBuffer.Log(commandList, ShaderDebugElement::OutputLambda, { .wrap = false, .header = false, .elementIndex = false, .startIndex = 1 });
+    }
 }
 
 void ClusterAccelBuilder::CopyClusterOffset(uint32_t instanceIndex,

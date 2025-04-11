@@ -22,6 +22,8 @@
 
 #pragma pack_matrix(row_major)
 
+#include "rtxmg/utils/shader_debug.h"
+
 #include "render_params.h"
 #include "lighting_cb.h"
 #include <donut/shaders/bindless.h>
@@ -32,13 +34,13 @@
 #include <donut/shaders/utils.hlsli>
 #include <donut/shaders/binding_helpers.hlsli>
 
-#include "rtxmg/utils/constants.h"
-#include "ray_payload.h"
-#include "color.hlsli"
 #include "rtxmg/cluster_builder/cluster.h"
 #include "rtxmg/hiz/hiz_buffer_constants.h"
+#include "rtxmg/utils/constants.h"
+
+#include "ray_payload.h"
+#include "color.hlsli"
 #include "gbuffer.h"
-#include "pixel_debug.h"
 #include "brdf.hlsli"
 #include "utils.hlsli"
 
@@ -71,8 +73,8 @@ RWTexture2D<float4> u_DebugTex3 : register(u10);
 RWTexture2D<float4> u_DebugTex4 : register(u11);
 #endif
 
-#if ENABLE_PIXEL_DEBUG
-RWStructuredBuffer<PixelDebugElement> u_PixelDebug : register(u12);
+#if ENABLE_SHADER_DEBUG
+RWStructuredBuffer<ShaderDebugElement> u_PixelDebug : register(u12);
 #endif
 
 RWBuffer<uint32_t>  u_TimeviewBuffer : register(u13);
@@ -314,6 +316,8 @@ GetGeometryFromHit(RayPayload payload)
 
     gs.surfaceUV = uv;
     gs.surfaceIndex = clusterShadingData.m_surfaceId;
+
+    SHADER_DEBUG(gs.surfaceIndex);
 
     // bilerp from 4 corner attributes
     const float u = uv.x;
@@ -817,7 +821,7 @@ float3 SampleDirect(MaterialSample material, float3 p, float3 gN, float3 N, floa
     : SV_RayPayload, in Attributes attrib
     : SV_IntersectionAttributes)
 {
-    PIXEL_DEBUG_INIT(u_PixelDebug, g_RenderParams.debugPixel, DispatchRaysIndex().xy, false);
+    SHADER_DEBUG_INIT(u_PixelDebug, g_RenderParams.debugPixel, DispatchRaysIndex().xy);
 
     payload.instanceID = InstanceID();
     payload.primitiveIndex = PrimitiveIndex();
@@ -825,8 +829,8 @@ float3 SampleDirect(MaterialSample material, float3 p, float3 gN, float3 N, floa
     payload.barycentrics = attrib.uv;
     payload.hitT = RayTCurrent();
 
-    PIXEL_DEBUG(uint4(payload.instanceID, payload.primitiveIndex, payload.geometryIndex, NvRtGetClusterID()));
-    PIXEL_DEBUG(float3(payload.barycentrics, payload.hitT));
+    SHADER_DEBUG(uint4(payload.instanceID, payload.primitiveIndex, payload.geometryIndex, NvRtGetClusterID()));
+    SHADER_DEBUG(float3(payload.barycentrics, payload.hitT));
 
     IntersectionRecord ir = GetIntersectionRecord(payload);
 
@@ -1049,7 +1053,7 @@ uint TimeDiff(uint startTime, uint endTime)
 
 [shader("raygeneration")]void RayGen()
 {
-    PIXEL_DEBUG_INIT(u_PixelDebug, g_RenderParams.debugPixel, DispatchRaysIndex().xy, true);
+    SHADER_DEBUG_INIT(u_PixelDebug, g_RenderParams.debugPixel, DispatchRaysIndex().xy);
 
     uint startTime = NvGetSpecial(NV_SPECIALOP_GLOBAL_TIMER_LO);
     DUMP_FLOAT4(1, float4(0, 0, 0, 1)); // Clear debug buffer

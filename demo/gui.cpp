@@ -539,6 +539,12 @@ void UserInterface::BuildUIMain(int2 screenLayoutSize)
             ImGui::SetTooltip("Dump Debug Buffer.");
 
         ImGui::SameLine();
+        ImGui::Checkbox("Monolithic ClusterBuild", &uiData.enableMonolithicClusterBuild);
+        if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
+            ImGui::SetTooltip(
+                "Use a single shader for compute cluster tiling and fill clusters.\n"
+                "Instead of splitting the dispatches by surface type");
+
         bool accelBuildLoggingEnabled = m_app.GetAccelBuildLoggingEnabled();
         if (ImGui::Checkbox("AS Log", &accelBuildLoggingEnabled))
         {
@@ -547,6 +553,7 @@ void UserInterface::BuildUIMain(int2 screenLayoutSize)
         if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
             ImGui::SetTooltip("Log accel build buffers (Syncs GPU, Slow!)");
 
+        ImGui::SameLine();
         ImGui::Checkbox("Build AS", &uiData.forceRebuildAccelStruct);
         if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
             ImGui::SetTooltip(
@@ -554,16 +561,25 @@ void UserInterface::BuildUIMain(int2 screenLayoutSize)
                 "Disable to freeze tessellation and move the camera around.\n"
                 "Animation will always force a rebuild.");
 
-        ImGui::SameLine();
-        ImGui::Checkbox("Monolithic ClusterBuild", &uiData.enableMonolithicClusterBuild);
-        if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
-            ImGui::SetTooltip(
-                "Use a single shader for compute cluster tiling and fill clusters.\n"
-                "Instead of splitting the dispatches by surface type");
+        if (!uiData.forceRebuildAccelStruct)
+        {
+            ImGui::SameLine();
+            if (ImGui::Button("Build AS Once"))
+            {
+                m_app.RebuildAS();
+            }
+            if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
+                ImGui::SetTooltip("Force rebuild-AS one time, useful for debug logging.");
+        }
 
-#if ENABLE_PIXEL_DEBUG
+#if ENABLE_SHADER_DEBUG
         int2& debugPixel = renderer.GetDebugPixel();
         ImGui::InputInt2("DebugPixel (Right-click)", debugPixel.data());
+                
+        if (ImGui::InputInt2("Tessellator Debug (Surface, Lane)", m_app.GetDebugSurfaceLaneIndex().data()))
+        {
+            m_app.RebuildAS();
+        }
 #endif
     }
 #endif

@@ -40,7 +40,6 @@
 #include "render_params.h"
 #include "blit_params.h"
 #include "motion_vectors_params.h"
-#include "pixel_debug.h"
 #include "render_targets.h"
 
 #include "rtxmg/cluster_builder/cluster_accel_builder.h"
@@ -49,6 +48,7 @@
 #include "rtxmg/hiz/zbuffer.h"
 #include "rtxmg/scene/camera.h"
 #include "rtxmg/utils/buffer.h"
+#include "rtxmg/utils/shader_debug.h"
 
 using namespace donut::engine;
 using namespace donut::math;
@@ -450,9 +450,9 @@ private:
     nvrhi::ComputePipelineHandle m_motionVectorsPSO[size_t(MvecDisplacement::Count)];
 
     // Debug Buffers
-#if ENABLE_PIXEL_DEBUG
-    RTXMGBuffer<PixelDebugElement> m_pixelDebugBuffer;
-    RTXMGBuffer<PixelDebugElement> m_motionVectorsPixelDebugBuffer;
+#if ENABLE_SHADER_DEBUG
+    RTXMGBuffer<ShaderDebugElement> m_pixelDebugBuffer;
+    RTXMGBuffer<ShaderDebugElement> m_motionVectorsPixelDebugBuffer;
 #endif
     nvrhi::BufferHandle m_timeViewBuffer;
 

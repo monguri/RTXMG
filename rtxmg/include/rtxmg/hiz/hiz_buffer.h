@@ -91,8 +91,4 @@ private:
 
     nvrhi::BufferHandle m_reduceParamsBuffer;
     nvrhi::BufferHandle m_displayParamsBuffer;
-
-    RTXMGBuffer<float4> m_debugBuffer;
-    nvrhi::BindingSetHandle m_debugBS;
-    nvrhi::BindingLayoutHandle m_debugBL;
 };

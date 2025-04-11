@@ -38,6 +38,7 @@
 
 #include "rtxmg/scene/model.h"
 #include "rtxmg/utils/buffer.h"
+#include "rtxmg/utils/shader_debug.h"
 
 #include <donut/engine/CommonRenderPasses.h>
 #include <donut/engine/ShaderFactory.h>
@@ -203,7 +204,7 @@ public:
     void BuildAccel(const RTXMGScene& scene, const TessellatorConfig& config, 
         ClusterAccels& accels, ClusterStatistics& stats, uint32_t frameIndex, nvrhi::ICommandList* commandList);
     
-    RTXMGBuffer<float4> GetDebugBuffer() const { return m_debugBuffer; }
+    RTXMGBuffer<ShaderDebugElement>& GetDebugBuffer() { return m_debugBuffer; }
 
 protected:
     void UpdateMemoryAllocations(ClusterAccels& accels, uint32_t numInstances, uint32_t sceneSubdPatches);
@@ -303,5 +304,5 @@ protected:
     nvrhi::BufferHandle m_fillClustersParamsBuffer; // constant buffer for fill clusters
     nvrhi::BufferHandle m_fillBlasFromClasArgsParamsBuffer; // constant buffer for filling indirect args to initialize blas from clas
 
-    RTXMGBuffer<float4> m_debugBuffer;
+    RTXMGBuffer<ShaderDebugElement> m_debugBuffer;
 };

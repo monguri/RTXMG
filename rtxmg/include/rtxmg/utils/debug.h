@@ -30,9 +30,6 @@
 #define RTXMG_DEBUG_H 
 
 #include "rtxmg/utils/constants.h"
-
-#ifdef __cplusplus
-
 #include "rtxmg/utils/buffer.h"
 
 int GetUniqueFileIndex(const char* baseName, const char* extension);
@@ -40,33 +37,5 @@ void WriteTexToCSV(nvrhi::ICommandList* commandList, nvrhi::ITexture* tex, char 
 void WriteBufferToCSV(nvrhi::ICommandList* commandList, RTXMGBuffer<float>& buf, char const filename[], int width, int height);
 
 #define logassert(condition, message, ...) if (!(condition)) { donut::log::fatal(message, ##__VA_ARGS__); assert(false); }
-
-#else
-void __DO_DUMP(float4 x, bool debug, inout uint32_t idx, RWStructuredBuffer<float4> output)
-{
-    if (debug) output[idx++] = x;
-}
-
-void __DUMP(float4 x, bool debug, inout uint32_t idx, RWStructuredBuffer<float4> output)
-{
-    __DO_DUMP(x, debug, idx, output);
-}
-void __DUMP(float3 x, bool debug, inout uint32_t idx, RWStructuredBuffer<float4> output)
-{
-    __DO_DUMP(float4(x, 0.0f), debug, idx, output);
-}
-void __DUMP(float2 x, bool debug, inout uint32_t idx, RWStructuredBuffer<float4> output)
-{
-    __DO_DUMP(float4(x, 0.0f, 0.0f), debug, idx, output);
-}
-void __DUMP(float x, bool debug, inout uint32_t idx, RWStructuredBuffer<float4> output)
-{
-    __DO_DUMP(float4(x, 0.0f, 0.0f, 0.0f), debug, idx, output);
-}
-
-#define DUMP(x) __DUMP(x, debug, g_debugOutputSlot, u_Debug)
-
-
-#endif
 
 #endif /* RTXMG_DEBUG_H */

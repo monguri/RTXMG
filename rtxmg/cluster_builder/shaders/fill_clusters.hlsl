@@ -22,6 +22,8 @@
 
 #include <nvrhi/nvrhiHLSL.h>
 
+#include "rtxmg/utils/shader_debug.h"
+
 #include <donut/shaders/bindless.h>
 #include <donut/shaders/binding_helpers.hlsli>
 
@@ -77,7 +79,7 @@ StructuredBuffer<float2> t_TexCoords : register(t19);
 // Buffers for the gatherer
 RWStructuredBuffer<float3> u_ClusterVertexPositions : register(u0);
 RWStructuredBuffer<ClusterShadingData> u_ClusterShadingData : register(u1);
-RWStructuredBuffer<float4> u_Debug : register(u2);
+RWStructuredBuffer<ShaderDebugElement> u_Debug : register(u2);
 
 SamplerState s_DisplacementSampler : register(s0);
 

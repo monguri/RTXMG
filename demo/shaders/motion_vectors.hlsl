@@ -21,6 +21,8 @@
 */
 #pragma pack_matrix(row_major)
 
+#include "rtxmg/utils/shader_debug.h"
+
 #include <donut/shaders/bindless.h>
 #include <donut/shaders/binding_helpers.hlsli>
 
@@ -30,8 +32,6 @@
 
 #include "rtxmg/cluster_builder/displacement.hlsli"
 #include "rtxmg/subdivision/subdivision_eval.hlsli"
-
-#include "pixel_debug.h"
 
 // MVEC_DISPLACEMENT
 #define MVEC_DISPLACEMENT_FROM_SUBD_EVAL 0
@@ -53,8 +53,8 @@ StructuredBuffer<MaterialConstants> t_MaterialConstants     : register(t5);
 
 RWTexture2D<float2>                 u_MotionVectors         : register(u0);
 
-#if ENABLE_PIXEL_DEBUG
-RWStructuredBuffer<PixelDebugElement> u_PixelDebug          : register(u1);
+#if ENABLE_SHADER_DEBUG
+RWStructuredBuffer<ShaderDebugElement> u_PixelDebug          : register(u1);
 #endif
 
 
@@ -92,7 +92,7 @@ void main(uint3 threadIdx : SV_DispatchThreadID)
     if (any(idx >= uint2(g_RenderParams.camera.dims)))
         return;
 
-    PIXEL_DEBUG_INIT(u_PixelDebug, g_RenderParams.debugPixel, idx, true);
+    SHADER_DEBUG_INIT(u_PixelDebug, g_RenderParams.debugPixel, idx);
 
     const HitResult hit = t_HitResult[idx.y * g_RenderParams.camera.dims.x + idx.x];
 

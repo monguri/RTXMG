@@ -116,15 +116,6 @@ std::unique_ptr<HiZBuffer> HiZBuffer::Create(uint2 size,
     hiz->m_displayParamsBuffer = device->createBuffer(nvrhi::utils::CreateVolatileConstantBufferDesc(
         sizeof(HiZDisplayParams), "HiZDisplayParams", engine::c_MaxRenderPassConstantBufferVersions));
 
-    hiz->m_debugBuffer.Create(65536, "HiZDebug", device);
-    auto debugBindingSetDesc = nvrhi::BindingSetDesc()
-        .addItem(nvrhi::BindingSetItem::StructuredBuffer_UAV(0, hiz->m_debugBuffer));
-
-    if (!nvrhi::utils::CreateBindingSetAndLayout(device, nvrhi::ShaderType::Compute, 1, debugBindingSetDesc, hiz->m_debugBL, hiz->m_debugBS))
-    {
-        log::fatal("Failed to create binding set and layout for hiz debug");
-    }
-
     return hiz;
 }
 
@@ -249,8 +240,7 @@ void HiZBuffer::Reduce(nvrhi::ITexture* zbuffer, nvrhi::ICommandList* commandLis
     {
         nvrhi::ComputePipelineDesc computePipelineDesc = nvrhi::ComputePipelineDesc()
             .setComputeShader(m_pass1Shader)
-            .addBindingLayout(m_passBL)
-            .addBindingLayout(m_debugBL);
+            .addBindingLayout(m_passBL);
 
         m_pass1PSO = device->createComputePipeline(computePipelineDesc);
 
@@ -261,8 +251,7 @@ void HiZBuffer::Reduce(nvrhi::ITexture* zbuffer, nvrhi::ICommandList* commandLis
 
     auto state = nvrhi::ComputeState()
         .setPipeline(m_pass1PSO)
-        .addBindingSet(bindingSet)
-        .addBindingSet(m_debugBS);
+        .addBindingSet(bindingSet);
 
     commandList->setComputeState(state);
 
