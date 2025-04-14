@@ -200,7 +200,7 @@ struct UIData
     bool showLodInspector = false;
     bool forceRebuildAccelStruct = true;
     bool enableMonolithicClusterBuild = false;
-
+    
     TimeLineEditorState timeLineEditorState;
 
     std::shared_ptr<donut::engine::LoadedTexture> envmap = nullptr;

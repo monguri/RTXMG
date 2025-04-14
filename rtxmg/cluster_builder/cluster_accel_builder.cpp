@@ -640,7 +640,7 @@ void ClusterAccelBuilder::FillInstanceClusters(const RTXMGScene& scene, ClusterA
         FillClustersParams params = {};
         params.instanceIndex = instanceIndex;
         params.quantNBits = m_tessellatorConfig.quantNBits;
-        params.isolationLevel = subd.m_dynamicIsolationLevel;
+        params.isolationLevel = m_tessellatorConfig.isolationLevel;
         params.globalDisplacementScale = m_tessellatorConfig.displacementScale;
         params.clusterPattern = uint32_t(m_tessellatorConfig.clusterPattern);
         params.firstGeometryIndex = firstGeometryIndex;
@@ -794,7 +794,7 @@ void ClusterAccelBuilder::ComputeInstanceClusterTiling(uint32_t instanceIndex,
     params.viewportSize.x = float(m_tessellatorConfig.viewportSize.x);
     params.viewportSize.y = float(m_tessellatorConfig.viewportSize.y);
     params.firstGeometryIndex = firstGeometryIndex;
-    params.isolationLevel = subdivisionSurface.m_dynamicIsolationLevel;
+    params.isolationLevel = m_tessellatorConfig.isolationLevel;
     params.coarseTessellationRate = m_tessellatorConfig.coarseTessellationRate;
     params.fineTessellationRate = m_tessellatorConfig.fineTessellationRate;
     params.cameraPos = m_tessellatorConfig.camera->GetEye();

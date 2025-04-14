@@ -838,18 +838,37 @@ void UserInterface::BuildUIMain(int2 screenLayoutSize)
                 "  length of the control cage edges scaled by their distance to the\n"
                 "  camera location.\n");
 
+        
+        if (ImGuiComboFromArray("Visibility Mode", &visMode, kVisibilityModeNames))
         {
-            if (ImGuiComboFromArray("Visibility Mode", &visMode, kVisibilityModeNames))
+            m_app.SetTessellatorVisibilityMode(visMode);
+        }
+        if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
+            ImGui::SetTooltip(
+                "Tessellation visibility predicates:\n\n"
+                "- Surface 1-Ring: uses the 1-ring control cage of a surface to derive\n"
+                "  visibility for an entire surface\n\n"
+                "- Limit edge: generates visibility predicate for each limit edge a\n"
+                "  surface only.\n");
+        
+        
+        bool edgeRateIsolation = m_app.GetEdgeRateIsolation();
+        ImGui::Checkbox("Edge Rate Isolation", &edgeRateIsolation);
+        {
+            m_app.SetEdgeRageIsolation(edgeRateIsolation);
+        }
+        if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
+            ImGui::SetTooltip("Enable to dynamic determine isolation level from edge rate per surface");
+        
+        if (!edgeRateIsolation)
+        {
+            int isolationLevel = m_app.GetGlobalIsolationLevel();
+            if (ImGui::SliderInt("Global Isolation Level", &isolationLevel, 1, 6))
             {
-                m_app.SetTessellatorVisibilityMode(visMode);
+                m_app.SetGlobalIsolationLevel(uint32_t(isolationLevel));
             }
             if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
-                ImGui::SetTooltip(
-                    "Tessellation visibility predicates:\n\n"
-                    "- Surface 1-Ring: uses the 1-ring control cage of a surface to derive\n"
-                    "  visibility for an entire surface\n\n"
-                    "- Limit edge: generates visibility predicate for each limit edge a\n"
-                    "  surface only.\n");
+                ImGui::SetTooltip("Global isolation level for all meshes");
         }
 
         float displacementScale = m_app.GetDisplacementScale();

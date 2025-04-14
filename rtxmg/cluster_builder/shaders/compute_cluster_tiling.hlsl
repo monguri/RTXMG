@@ -506,16 +506,9 @@ void GathererWriteCluster(Cluster cluster, uint32_t clusterIndex, GridSampler gr
     u_ClusterShadingData[clusterIndex] = shadingData;
 }
 
-void WriteSurfaceWave(uint32_t iWave, uint32_t iLane, uint32_t iSurface, uint16_t edgeSegments)
+void WriteSurfaceWave(uint32_t iWave, uint32_t iLane, uint32_t iSurface, GridSampler rSampler)
 {
     uint32_t waveSampleOffset = kNumWaveSurfaceUVSamples * iWave;
-    
-    GridSampler rSampler;
-    rSampler.edgeSegments[0] = WaveReadLaneAt(edgeSegments, 0);
-    rSampler.edgeSegments[1] = WaveReadLaneAt(edgeSegments, 1);
-    rSampler.edgeSegments[2] = WaveReadLaneAt(edgeSegments, 2);
-    rSampler.edgeSegments[3] = WaveReadLaneAt(edgeSegments, 3);
-    
     if (iLane == 0)
     {
         u_GridSamplers[iSurface] = rSampler;
@@ -740,7 +733,10 @@ void main(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
 
     SubdivisionEvaluatorHLSL subd;
     subd.m_surfaceIndex = iSurface;
-    subd.m_isolationLevel = (uint16_t)g_Params.isolationLevel;
+
+    // If isolationLevel is 0, use dynamic mode and do the first pass with the simplest isolation level
+    // Otherwise use the isolation level passed in
+    subd.m_isolationLevel = g_Params.isolationLevel == 0 ? 1 : uint16_t(g_Params.isolationLevel);
     subd.m_surfaceDescriptors = t_VertexSurfaceDescriptors;
     subd.m_plans = t_Plans;
     subd.m_subpatchTrees = t_SubpatchTrees;
@@ -785,5 +781,25 @@ void main(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
 
     uint16_t edgeSegments = EvaluateEdgeSegments(iWave, iLane, visibility, tessFactor);
 
-    WriteSurfaceWave(iWave, iLane, iSurface, edgeSegments);
+    GridSampler rSampler;
+    rSampler.edgeSegments[0] = WaveReadLaneAt(edgeSegments, 0);
+    rSampler.edgeSegments[1] = WaveReadLaneAt(edgeSegments, 1);
+    rSampler.edgeSegments[2] = WaveReadLaneAt(edgeSegments, 2);
+    rSampler.edgeSegments[3] = WaveReadLaneAt(edgeSegments, 3);
+
+    // If isolationLevel is 0, use dynamic mode, we calculate the patch points from the edge rates on rSampler
+    if (g_Params.isolationLevel == 0)
+    {
+        subd.m_isolationLevel = rSampler.IsolationLevel();
+#if SURFACE_TYPE == SURFACE_TYPE_ALL
+        if (!subd.IsPureBSplinePatch() && !subd.IsBSplinePatch())
+        {
+            subd.WaveEvaluatePatchPoints(iLane);
+        }
+#elif SURFACE_TYPE == SURFACE_TYPE_LIMIT
+        subd.WaveEvaluatePatchPoints(iLane);
+#endif
+    }
+    
+    WriteSurfaceWave(iWave, iLane, iSurface, rSampler);
 }

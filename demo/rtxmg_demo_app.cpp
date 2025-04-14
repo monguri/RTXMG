@@ -543,11 +543,11 @@ bool RTXMGDemoApp::MouseButtonUpdate(int button, int action, int mods)
         double mousex = 0, mousey = 0;
         glfwGetCursorPos(GetDeviceManager()->GetWindow(), &mousex, &mousey);
 
-        float2 renderScale = float2(m_renderSize.x, m_renderSize.y) / float2(m_displaySize.x, m_displaySize.y);
-        float2 mousePos = float2(mousex, mousey);
+        float2 renderScale = float2(m_renderSize) / float2(m_displaySize);
+        float2 mousePos = float2(float(mousex), float(mousey));
         float2 debugPixel = mousePos * renderScale;
 
-        m_renderParams.debugPixel = int2(debugPixel.x, debugPixel.y);
+        m_renderParams.debugPixel = int2(debugPixel);
 
         m_dumpPixelDebug = true;
     }
@@ -860,8 +860,9 @@ void RTXMGDemoApp::Render(nvrhi::IFramebuffer* framebuffer)
                 .enableMonolithicClusterBuild = m_ui.enableMonolithicClusterBuild,
                 .viewportSize = { (uint32_t)m_renderSize.x, (uint32_t)m_renderSize.y },
                 .edgeSegments = m_args.edgeSegments,
-                .quantNBits = m_args.quantNBits,
+                .isolationLevel = m_args.edgeRateIsolation ? 0u : m_args.globalIsolationLevel,
                 .clusterPattern = (ClusterPattern)m_renderParams.clusterPattern,
+                .quantNBits = m_args.quantNBits,
                 .displacementScale = m_renderParams.globalDisplacementScale,
                 .camera = &m_tesselationCamera,
                 .zbuffer = renderer.GetZBuffer(),
@@ -1017,6 +1018,27 @@ void RTXMGDemoApp::SetQuantizationBits(int quantNBits)
         m_accelBuilderNeedsUpdate = true;
         GetRenderer().ResetSubframes();
         GetRenderer().ResetDenoiser();
+    }
+}
+
+void RTXMGDemoApp::SetGlobalIsolationLevel(uint32_t isolationLevel)
+{
+    isolationLevel = std::clamp(isolationLevel, TessellatorConfig::kMinIsolationLevel, TessellatorConfig::kMaxIsolationLevel);
+    if (isolationLevel != m_args.globalIsolationLevel)
+    {
+        m_args.globalIsolationLevel = isolationLevel;
+        m_accelBuilderNeedsUpdate = true;
+        GetRenderer().ResetSubframes();
+    }
+}
+
+void RTXMGDemoApp::SetEdgeRageIsolation(bool edgeRateIsolation)
+{
+    if (edgeRateIsolation != m_args.edgeRateIsolation)
+    {
+        m_args.edgeRateIsolation = edgeRateIsolation;
+        m_accelBuilderNeedsUpdate = true;
+        GetRenderer().ResetSubframes();
     }
 }
 
