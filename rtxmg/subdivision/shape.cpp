@@ -302,9 +302,9 @@ static char const* parseFace(char const* ptr, std::vector<int>& vertcounts,
         if (vert.x != invalid_id)
             verts.push_back(vert.x - 1);
         if (vert.y != invalid_id)
-            uvs.push_back(vert.y - 1);
+            uvs.push_back(std::max(0, vert.y - 1));
         if (vert.z != invalid_id)
-            facenormals.push_back(vert.z - 1);
+            facenormals.push_back(std::max(0, vert.z - 1));
 
         ++count;
         ptr = SkipWhiteSpace(ptr);
