@@ -1,4 +1,4 @@
-# RTX Mega Geometry 0.9 (Beta)
+# RTX Mega Geometry (Beta)
 
 ![Title](./docs/images/banner.jpg)
 
