@@ -608,7 +608,7 @@ struct SubdivisionPlanContext
         return treeDescriptor;
     }
 
-    bool IsBSplinePatch(int level)
+    bool IsBSplinePatch(uint16_t level)
     {
         return GetTreeDescriptor().GetNumPatchPoints(level) == 0;
     }

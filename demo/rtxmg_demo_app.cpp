@@ -130,8 +130,9 @@ void RTXMGDemoApp::UpdateParams()
     m_renderParams.denoiserMode = m_denoiserMode;
     m_renderParams.enableTimeView = m_args.enableTimeView;
 
-    m_renderParams.globalDisplacementScale = m_args.dispScale;
+    m_renderParams.isolationLevel = m_args.globalIsolationLevel;
     m_renderParams.clusterPattern = uint32_t(m_args.clusterPattern);
+    m_renderParams.globalDisplacementScale = m_args.dispScale;
 
     m_renderParams.hasEnvironmentMap = 0;
     m_renderParams.enableEnvmapHeatmap = 0;
@@ -860,7 +861,7 @@ void RTXMGDemoApp::Render(nvrhi::IFramebuffer* framebuffer)
                 .enableMonolithicClusterBuild = m_ui.enableMonolithicClusterBuild,
                 .viewportSize = { (uint32_t)m_renderSize.x, (uint32_t)m_renderSize.y },
                 .edgeSegments = m_args.edgeSegments,
-                .isolationLevel = m_args.edgeRateIsolation ? 0u : m_args.globalIsolationLevel,
+                .isolationLevel = m_renderParams.isolationLevel,
                 .clusterPattern = (ClusterPattern)m_renderParams.clusterPattern,
                 .quantNBits = m_args.quantNBits,
                 .displacementScale = m_renderParams.globalDisplacementScale,
@@ -1024,19 +1025,9 @@ void RTXMGDemoApp::SetQuantizationBits(int quantNBits)
 void RTXMGDemoApp::SetGlobalIsolationLevel(uint32_t isolationLevel)
 {
     isolationLevel = std::clamp(isolationLevel, TessellatorConfig::kMinIsolationLevel, TessellatorConfig::kMaxIsolationLevel);
-    if (isolationLevel != m_args.globalIsolationLevel)
+    if (isolationLevel != m_renderParams.isolationLevel)
     {
-        m_args.globalIsolationLevel = isolationLevel;
-        m_accelBuilderNeedsUpdate = true;
-        GetRenderer().ResetSubframes();
-    }
-}
-
-void RTXMGDemoApp::SetEdgeRageIsolation(bool edgeRateIsolation)
-{
-    if (edgeRateIsolation != m_args.edgeRateIsolation)
-    {
-        m_args.edgeRateIsolation = edgeRateIsolation;
+        m_renderParams.isolationLevel = isolationLevel;
         m_accelBuilderNeedsUpdate = true;
         GetRenderer().ResetSubframes();
     }

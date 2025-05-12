@@ -61,7 +61,7 @@
 
 #include "rtxmg/cluster_builder/displacement.hlsli"
 
-static const uint32_t kComputeClusterTilingThreadsX = 32;
+static const uint32_t kComputeClusterTilingLanes = 32;
 
 ConstantBuffer<ComputeClusterTilingParams> g_Params : register(b0);
 
@@ -374,7 +374,7 @@ void WaveEvaluateBSplinePatch8(uint32_t iWave,
     else
     {
         // there is no wave parallel implementation for non-bspline patches falling back to single thread
-        subd.WaveEvaluatePatchPoints(iLane);
+        subd.WaveEvaluatePatchPoints(iLane, kComputeClusterTilingLanes);
         if (iLane < kNumWaveSurfaceUVSamples)
         {
             LimitFrame limit = subd.EvaluateLimitSurface(kWaveSurfaceUVSamples[iLane]);
@@ -393,7 +393,7 @@ void WaveEvaluateBSplinePatch8(uint32_t iWave,
     }
 #elif SURFACE_TYPE == SURFACE_TYPE_LIMIT
     // there is no wave parallel implementation for non-bspline patches falling back to single thread
-    subd.WaveEvaluatePatchPoints(iLane);
+    subd.WaveEvaluatePatchPoints(iLane, kComputeClusterTilingLanes);
     if (iLane < kNumWaveSurfaceUVSamples)
     {
         LimitFrame limit = subd.EvaluateLimitSurface(kWaveSurfaceUVSamples[iLane]);
@@ -531,7 +531,7 @@ void WriteSurfaceWave(uint32_t iWave, uint32_t iLane, uint32_t iSurface, GridSam
     uint32_t clusterTris = 0;
     
 #if ENABLE_WAVE_INTRINSICS
-    _Static_assert(SurfaceTiling::N_SUB_TILINGS <= kComputeClusterTilingThreadsX, "Must have enough lanes to use wave ops");
+    _Static_assert(SurfaceTiling::N_SUB_TILINGS <= kComputeClusterTilingLanes, "Must have enough lanes to use wave ops");
     if (iLane < SurfaceTiling::N_SUB_TILINGS)
     {
         ClusterTiling clusterTiling = surfaceTiling.subTilings[iLane];
@@ -680,7 +680,7 @@ void WriteSurfaceWave(uint32_t iWave, uint32_t iLane, uint32_t iSurface, GridSam
         // make clusters with tilingSize
         for (uint32_t iCluster = iLane;
             iCluster < tilingClusterCount;
-            iCluster += kComputeClusterTilingThreadsX)
+            iCluster += kComputeClusterTilingLanes)
         {
             Cluster cluster = MakeCluster(iSurface, tilingVertexOffset + tilingClusterVertexCount * iCluster,
                     surfaceTiling.ClusterOffset(iTiling, iCluster), tilingClusterSize.x, tilingClusterSize.y);
@@ -697,7 +697,7 @@ void WriteSurfaceWave(uint32_t iWave, uint32_t iLane, uint32_t iSurface, GridSam
     }
 }
 
-[numthreads(kComputeClusterTilingThreadsX, kComputeClusterTilingWaves, 1)]
+[numthreads(kComputeClusterTilingLanes, kComputeClusterTilingWaves, 1)]
 void main(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
 {  
     const uint32_t iLane = threadIdx.x;
@@ -734,9 +734,7 @@ void main(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
     SubdivisionEvaluatorHLSL subd;
     subd.m_surfaceIndex = iSurface;
 
-    // If isolationLevel is 0, use dynamic mode and do the first pass with the simplest isolation level
-    // Otherwise use the isolation level passed in
-    subd.m_isolationLevel = g_Params.isolationLevel == 0 ? 1 : uint16_t(g_Params.isolationLevel);
+    subd.m_isolationLevel = uint16_t(g_Params.isolationLevel);
     subd.m_surfaceDescriptors = t_VertexSurfaceDescriptors;
     subd.m_plans = t_Plans;
     subd.m_subpatchTrees = t_SubpatchTrees;
@@ -786,20 +784,6 @@ void main(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
     rSampler.edgeSegments[1] = WaveReadLaneAt(edgeSegments, 1);
     rSampler.edgeSegments[2] = WaveReadLaneAt(edgeSegments, 2);
     rSampler.edgeSegments[3] = WaveReadLaneAt(edgeSegments, 3);
-
-    // If isolationLevel is 0, use dynamic mode, we calculate the patch points from the edge rates on rSampler
-    if (g_Params.isolationLevel == 0)
-    {
-        subd.m_isolationLevel = rSampler.IsolationLevel();
-#if SURFACE_TYPE == SURFACE_TYPE_ALL
-        if (!subd.IsPureBSplinePatch() && !subd.IsBSplinePatch())
-        {
-            subd.WaveEvaluatePatchPoints(iLane);
-        }
-#elif SURFACE_TYPE == SURFACE_TYPE_LIMIT
-        subd.WaveEvaluatePatchPoints(iLane);
-#endif
-    }
     
     WriteSurfaceWave(iWave, iLane, iSurface, rSampler);
 }

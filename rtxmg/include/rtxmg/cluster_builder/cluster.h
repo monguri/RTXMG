@@ -172,23 +172,6 @@ struct GridSampler
     {
         return GridSizeX() == 0 && GridSizeY() == 0;
     }
-
-    uint16_t IsolationLevel()
-    {
-        uint16_t maxEdgeVerts = max(edgeSegments.x, max(edgeSegments.y, max(edgeSegments.z, edgeSegments.w))) + 1;
-
-        if (maxEdgeVerts <= 4)
-            return 1;
-        if (maxEdgeVerts <= 20)
-            return 2;
-        if (maxEdgeVerts <= 100)
-            return 3;
-        if (maxEdgeVerts <= 500)
-            return 4;
-        if (maxEdgeVerts <= 2500)
-            return 5;
-        return 6;
-    }
 #endif
 };
 

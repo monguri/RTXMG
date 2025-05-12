@@ -139,6 +139,11 @@ struct RenderParams
     float fireflyMaxIntensity;
     float roughnessOverride;
 
+    uint32_t isolationLevel;
+    uint32_t clusterPattern;
+    float globalDisplacementScale;
+    float pad0;
+
     float3 missColor;
     uint32_t ptMaxBounces;
 
@@ -149,10 +154,10 @@ struct RenderParams
     int enableTimeView;
 
     float3 V;
-    uint32_t clusterPattern;
+    float pad1;
 
     float3 W;
-    float globalDisplacementScale;
+    float pad2;
 
     float2 jitter;
     int2 debugPixel;
@@ -187,8 +192,7 @@ struct SubdInstance
 
     uint32_t surfaceToGeometryIndexBindlessIndex;
     uint32_t topologyQualityBindlessIndex;
-    uint32_t isolationLevel;
-
+    
     float3x4 prevLocalToWorld;
     float3x4 worldToLocal;
 
@@ -204,7 +208,6 @@ struct SubdInstance
         , positionsPrevBindlessIndex(kInvalidBindlessIndex)
         , surfaceToGeometryIndexBindlessIndex(kInvalidBindlessIndex)
         , topologyQualityBindlessIndex(kInvalidBindlessIndex)
-        , isolationLevel(0)
     {}
 
     bool operator==(const SubdInstance& other) const

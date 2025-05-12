@@ -1098,8 +1098,7 @@ void RTXMGRenderer::UpdateAccelerationStructures(const TessellatorConfig &tessCo
         subdInstance.positionsPrevBindlessIndex = getDescriptorHeapIndex(mesh->m_positionsPrevDescriptor);
         subdInstance.surfaceToGeometryIndexBindlessIndex = getDescriptorHeapIndex(mesh->m_surfaceToGeometryIndexDescriptor);
         subdInstance.topologyQualityBindlessIndex = getDescriptorHeapIndex(mesh->m_topologyQualityDescriptor);
-        subdInstance.isolationLevel = mesh->m_dynamicIsolationLevel;
-
+        
         affineToColumnMajor(node->GetPrevLocalToWorldTransformFloat(), subdInstance.prevLocalToWorld);
         affineToColumnMajor(inverse(node->GetLocalToWorldTransformFloat()), subdInstance.worldToLocal);
         subdInstances.push_back(subdInstance);

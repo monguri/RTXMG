@@ -850,26 +850,17 @@ void UserInterface::BuildUIMain(int2 screenLayoutSize)
                 "  visibility for an entire surface\n\n"
                 "- Limit edge: generates visibility predicate for each limit edge a\n"
                 "  surface only.\n");
-        
-        
-        bool edgeRateIsolation = m_app.GetEdgeRateIsolation();
-        ImGui::Checkbox("Edge Rate Isolation", &edgeRateIsolation);
+       
+        int isolationLevel = m_app.GetGlobalIsolationLevel();
+        if (ImGui::SliderInt("Global Isolation Level", &isolationLevel, 1, 6))
         {
-            m_app.SetEdgeRageIsolation(edgeRateIsolation);
+            m_app.SetGlobalIsolationLevel(uint32_t(isolationLevel));
         }
         if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
-            ImGui::SetTooltip("Enable to dynamic determine isolation level from edge rate per surface");
-        
-        if (!edgeRateIsolation)
-        {
-            int isolationLevel = m_app.GetGlobalIsolationLevel();
-            if (ImGui::SliderInt("Global Isolation Level", &isolationLevel, 1, 6))
-            {
-                m_app.SetGlobalIsolationLevel(uint32_t(isolationLevel));
-            }
-            if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
-                ImGui::SetTooltip("Global isolation level for all meshes");
-        }
+            ImGui::SetTooltip("Global isolation level for all meshes.\n"
+                "- Needs to be >= the highest finite sharpness, but the default of 6 is sufficient.\n"
+                "- Finite sharpness is any sharpness < 10.0f.\n"
+                "- Infinite sharpness = 10.0f has an optimization that doesn't require isolation\n");
 
         float displacementScale = m_app.GetDisplacementScale();
         if (ImGui::SliderFloat("Displacement Scale", &displacementScale, 0.0f, 3.0f))

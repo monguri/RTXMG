@@ -213,9 +213,7 @@ public:
     int GetIsolationLevelSmooth() const { return m_args.isoLevelSmooth; }
     
     void SetGlobalIsolationLevel(uint32_t isolationLevel);
-    uint32_t GetGlobalIsolationLevel() const { return m_args.globalIsolationLevel; }
-    void SetEdgeRageIsolation(bool edgeRateIsolation);
-    bool GetEdgeRateIsolation() const { return m_args.edgeRateIsolation; }
+    uint32_t GetGlobalIsolationLevel() const { return m_renderParams.isolationLevel; }
 
     TessellatorConfig::VisibilityMode GetTessellatorVisibilityMode() const { return m_args.visMode; }
     void                              SetTessellatorVisibilityMode(TessellatorConfig::VisibilityMode visMode);

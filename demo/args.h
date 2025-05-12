@@ -114,7 +114,6 @@ struct Args : SceneArgs
     bool enableFrustumVisibility = true;
     bool enableBackfaceVisibility = true;
     bool enableHiZVisibility = true;
-    bool edgeRateIsolation = true;
     bool updateTessCamera = true;
 
     TessellatorConfig::MemorySettings tessMemorySettings;

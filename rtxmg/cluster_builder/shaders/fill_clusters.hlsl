@@ -126,8 +126,7 @@ void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_Gr
     SubdivisionEvaluatorHLSL subd;
     subd.m_surfaceIndex = iSurface;
 
-    // If isolationLevel is 0, use isolation level from the edge rates on rSampler
-    subd.m_isolationLevel = g_TessParams.isolationLevel == 0 ? rSampler.IsolationLevel() : uint16_t(g_TessParams.isolationLevel);
+    subd.m_isolationLevel = uint16_t(g_TessParams.isolationLevel);
     subd.m_surfaceDescriptors = t_VertexSurfaceDescriptors;
     subd.m_plans = t_Plans;
     subd.m_subpatchTrees = t_SubpatchTrees;

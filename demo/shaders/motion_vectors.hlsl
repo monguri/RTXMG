@@ -76,7 +76,7 @@ static DynamicSubdivisionEvaluatorHLSL MakeDynamicSubdivisionEvaluator(SubdInsta
     result.m_vertexControlPointsPrev = ResourceDescriptorHeap[NonUniformResourceIndex(subdInstance.positionsPrevBindlessIndex)];
 
     result.m_surfaceIndex = surfaceIndex;
-    result.m_isolationLevel = uint16_t(subdInstance.isolationLevel);
+    result.m_isolationLevel = uint16_t(g_RenderParams.isolationLevel);
     return result;
 }
 
@@ -133,8 +133,7 @@ void main(uint3 threadIdx : SV_DispatchThreadID)
         {
             // Resample displacement from texture and apply to prev frame limit surface
             // If tess rates vary then there can be a mismatch with the current frame hit point.
-            LimitFrame limitPrev;
-            subd.EvaluatePrev(hit.surfaceUV, limitPrev);
+            LimitFrame limitPrev = subd.EvaluatePrev(hit.surfaceUV);
 
             float3 displacementVec = 0.f;
 
@@ -163,7 +162,7 @@ void main(uint3 threadIdx : SV_DispatchThreadID)
             // Compute displacement using the delta between gbuffer hit point and subd limit point
             // Expensive since it re-evalutes limit surface again, but compensates for tess rates
             LimitFrame limit, limitPrev;
-            subd.Evaluate(hit.surfaceUV, limit, limitPrev);
+            subd.Evaluate(limit, limitPrev, hit.surfaceUV);
 
             float3 displacementVec = TransformPoint(Pw, subdInstance.worldToLocal) - limit.p;
 
