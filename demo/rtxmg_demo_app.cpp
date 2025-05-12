@@ -892,14 +892,7 @@ void RTXMGDemoApp::Render(nvrhi::IFramebuffer* framebuffer)
         }
 
         renderer.Launch(m_commandList, GetFrameIndex(), m_sunLight);
-
-        DenoiserMode effectiveDenoiserMode = GetEffectiveDenoiserMode();
-        if (effectiveDenoiserMode == DenoiserMode::DlssSr ||
-            effectiveDenoiserMode == DenoiserMode::DlssRr)
-        {
-            renderer.DlssUpscale(m_commandList, GetFrameIndex());
-        }
-
+        renderer.DlssUpscale(m_commandList, GetFrameIndex());
         renderer.BlitFramebuffer(m_commandList, framebuffer);
 
         stats::frameSamplers.gpuFrameTime.Stop();

@@ -77,6 +77,7 @@ namespace stats {
             timers[0] = &gpuFrameTime.Profile();
             timers[1] = &gpuRenderTime.Profile();
             timers[2] = &gpuDenoiserTime.Profile();
+            computeMotionVectorsTimer.Profile();
         } break;
         case GraphMode::HiZ: {
             timers[0] = &zRenderPassTime.Profile();
@@ -110,10 +111,6 @@ namespace stats {
                 ImPlot::SetupAxis(ImAxis_Y2, "##hidden1", ImPlotAxisFlags_NoDecorations);
                 ImPlot::SetupAxis(ImAxis_Y3, "##hidden2", ImPlotAxisFlags_NoDecorations);
 
-                //float vmax = 15.f;
-                //if( float ravg = timers[0]->runningAverage(); ravg > ( vmax * 0.5f ) )
-                //    vmax = ravg * 1.5f;
-
                 float vmax = timers[0]->RunningAverage() * 1.75f;
                 if (vmax < 1e-6)
                     vmax = timers[1]->RunningAverage() * 1.75f;
@@ -125,7 +122,7 @@ namespace stats {
             }
 
 
-            for (uint8_t i = 0; i < 3; ++i)
+            for (uint8_t i = 0; i < timers.size(); ++i)
             {
                 if (!timers[i])
                     continue;
@@ -134,13 +131,30 @@ namespace stats {
 
                 ImPlot::PlotLine(timers[i]->name.c_str(), timers[i]->data(), (int)timers[i]->size(),
                     xscale, xstart, ImPlotShadedFlags_None, timers[i]->Offset(), stride);
-
-                //ImPlot::PlotShaded( timers[i]->name.c_str(), timers[i]->samples.data(), (int)timers[i]->samples.m_size(),
-                //    0.f, xscale, xstart, ImPlotShadedFlags_None, timers[i]->offset(), stride);
-
             }
 
             ImPlot::EndPlot();
+            if (ImGui::IsItemHovered())
+            {
+                switch (mode)
+                {
+                case GraphMode::Overview:
+                    ImGui::SetTooltip(
+                        "GPU timers:\n"
+                        "  - Frame: %.4fms\n"
+                        "  - Pathtrace: %.4fms\n"
+                        "  - Motion Vectors: %.4fms\n"
+                        "  - Denoiser: %.4fms\n",
+                        gpuFrameTime.RunningAverage(),
+                        gpuRenderTime.RunningAverage(),
+                        computeMotionVectorsTimer.RunningAverage(),
+                        gpuDenoiserTime.RunningAverage());
+                break;
+                default:
+                    return;
+                }
+            }
+
         }
 
         // note: only one of the profiler tabs is active at a time, so we have to call

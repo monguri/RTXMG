@@ -270,10 +270,10 @@ void RTXMGRenderer::ComputeMotionVectors(nvrhi::ICommandList* commandList)
 
 void RTXMGRenderer::DlssUpscale(nvrhi::ICommandList *commandList, uint32_t frameIndex)
 {
-#if DONUT_WITH_STREAMLINE
-    stats::frameSamplers.gpuDenoiserTime.Start(commandList);
-    using StreamlineInterface = donut::app::StreamlineInterface;
+    ScopedGPUTimer timer(stats::frameSamplers.gpuDenoiserTime, commandList);
 
+#if DONUT_WITH_STREAMLINE
+    using StreamlineInterface = donut::app::StreamlineInterface;
     if (m_params.denoiserMode == DenoiserMode::None)
         return;
 
@@ -347,7 +347,6 @@ void RTXMGRenderer::DlssUpscale(nvrhi::ICommandList *commandList, uint32_t frame
 
         streamline.EvaluateDLSSRR(commandList);
     }
-    stats::frameSamplers.gpuDenoiserTime.Stop();
 #endif
 
     m_resetDenoiser = false;
@@ -557,9 +556,8 @@ void RTXMGRenderer::Launch(nvrhi::ICommandList* commandList,
     // Motion vectors
     {
         nvrhi::utils::ScopedMarker marker(commandList, "Motion Vectors");
-        stats::frameSamplers.computeMotionVectorsTimer.Start(commandList);
+        ScopedGPUTimer timer(stats::frameSamplers.computeMotionVectorsTimer, commandList);
         ComputeMotionVectors(commandList);
-        stats::frameSamplers.computeMotionVectorsTimer.Stop();
     }
 
     if (m_displayZBuffer && m_zbuffer)
