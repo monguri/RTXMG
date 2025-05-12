@@ -36,6 +36,9 @@
 #include "rtxmg/subdivision/osd_ports/tmr/subdivisionNode.h"
 #include "patch_param.h"
 
+enum class SingleCreaseDynamicIsolation : uint16_t { SHARP = 0, SMOOTH = 1, };
+static const SingleCreaseDynamicIsolation kSingleCreaseDynamicIsolation = SingleCreaseDynamicIsolation::SMOOTH;
+static const float kMinFloat = 1.17549435e-38f;
 // translators for Tmr => Far types
 inline PatchDescriptorType
 RegularBasisType(SchemeType scheme)
@@ -598,6 +601,32 @@ struct SubdivisionPlanHLSL
 };
 
 #ifndef __cplusplus
+
+float
+computeSingleCreaseSharpness(SubdivisionNode n, NodeDescriptor desc, uint16_t depth, uint16_t level)
+{
+    if (kSingleCreaseDynamicIsolation == SingleCreaseDynamicIsolation::SHARP)
+    {
+        return desc.HasSharpness() ? n.GetSharpness() : 0.0f;
+    }
+    else if (kSingleCreaseDynamicIsolation == SingleCreaseDynamicIsolation::SMOOTH)
+    {
+        if (desc.HasSharpness())
+        {
+            float sharpness = n.GetSharpness();
+            
+            // single-crease patches require a non-null boundary mask and sharpness > 0.f
+            // std::numeric_limits::min() ensures EvalBasisBSpline() evaluates the crease
+            // matrix
+            return max(kMinFloat, min(sharpness, float(level) - float(depth)));
+        }
+        return 0.f;
+    }
+
+    // Impossible path
+    return 0.f;
+}
+
 struct SubdivisionPlanContext
 {
     SubdivisionPlanHLSL m_data;
@@ -702,7 +731,7 @@ struct SubdivisionPlanContext
             {
             case NODE_REGULAR:
             {
-                float sharpness = desc.HasSharpness() ? node.GetSharpness() : 0.f;
+                float sharpness = computeSingleCreaseSharpness(node, desc, depth, level);
                 EvaluatePatchBasis(regularBasis, param, st, wP, wDs, wDt, sharpness);
                 break;
             }
