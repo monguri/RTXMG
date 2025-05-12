@@ -568,13 +568,14 @@ inline void EvaluatePatchBasis(PatchDescriptorType patchType,
 
 struct SubdivisionPlanHLSL
 {
+    static const SchemeType kScheme = SCHEME_CATMARK;
+    static const EndCapType kEndCap = ENDCAP_BSPLINE_BASIS;
+
+    // scheme, endcap used to be dynamically defined
+    SchemeType GetScheme() { return kScheme; }
+    EndCapType GetEndCap() { return kEndCap; }
+
     uint16_t numControlPoints;
-
-    // note: schemes & end-cap maths should not be dynamic conditional paths in
-    // the run-time kernels, so both of these should be moved out of this struct
-    SchemeType scheme;
-    EndCapType endCap;
-
     uint16_t coarseFaceSize;
     int16_t  coarseFaceQuadrant;  // locates a surface within a non-quad parent face
 
@@ -589,6 +590,11 @@ struct SubdivisionPlanHLSL
     // - rows contain a stencil of weights for each patch point
     uint32_t stencilMatrixOffset; // index into m_stencilMatrix
     uint32_t stencilMatrixSize; // size of elements in m_stencilMatrix
+
+    // member variables are not referenced (see GetScheme(), GetEndCap()) but are left in here
+    // in case the caller wants to implement a dynamic path
+    SchemeType scheme;
+    EndCapType endCap;
 };
 
 #ifndef __cplusplus
@@ -640,7 +646,7 @@ struct SubdivisionPlanContext
             {
                 break;
             }
-            switch (m_data.scheme)
+            switch (m_data.GetScheme())
             {
             case SCHEME_CATMARK:
                 TraverseCatmark(uv.x, uv.y, quadrant);
@@ -664,8 +670,8 @@ struct SubdivisionPlanContext
 
     SubdivisionNode EvaluateBasis(float2 st, out float wP[16], out float wDs[16], out float wDt[16], out uint16_t subpatch, uint16_t level)
     {
-        PatchDescriptorType regularBasis = RegularBasisType(m_data.scheme);
-        PatchDescriptorType irregularBasis = IrregularBasisType(m_data.scheme, m_data.endCap);
+        PatchDescriptorType regularBasis = RegularBasisType(m_data.GetScheme());
+        PatchDescriptorType irregularBasis = IrregularBasisType(m_data.GetScheme(), m_data.GetEndCap());
 
         bool isIrregular = !(GetTreeDescriptor().IsRegularFace());
 
