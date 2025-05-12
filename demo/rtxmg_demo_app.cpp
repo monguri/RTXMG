@@ -711,7 +711,12 @@ void RTXMGDemoApp::UpdateDLSSSettings()
     }
 
     // Update effective denoiser mode
-    m_renderParams.denoiserMode = denoiserMode;
+    if (m_renderParams.denoiserMode != denoiserMode)
+    {
+        m_renderParams.denoiserMode = denoiserMode;
+        GetRenderer().ResetSubframes();
+        GetRenderer().ResetDenoiser();
+    }
 }
 
 void RTXMGDemoApp::Animate(float fElapsedTimeSeconds)
