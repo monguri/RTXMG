@@ -266,16 +266,16 @@ MonguriDemoApp::~MonguriDemoApp()
     korgi::Shutdown();
 }
 
-RTXMGRenderer& MonguriDemoApp::GetRenderer()
+MonguriRenderer& MonguriDemoApp::GetRenderer()
 {
     if (!m_renderer)
     {
-        RTXMGRenderer::Options rendererOptions{
+        MonguriRenderer::Options rendererOptions{
             .params = m_renderParams,
             .device = GetDevice()
         };
 
-        m_renderer = std::make_unique<RTXMGRenderer>(rendererOptions);
+        m_renderer = std::make_unique<MonguriRenderer>(rendererOptions);
     }
     return *m_renderer;
 }
@@ -342,7 +342,7 @@ bool MonguriDemoApp::Init()
         }
     }
 
-    RTXMGRenderer& renderer = GetRenderer();
+    MonguriRenderer& renderer = GetRenderer();
     m_TextureCache = renderer.GetTextureCache();
     m_CommonPasses = renderer.GetCommonPasses();
     m_commandList = GetDevice()->createCommandList();

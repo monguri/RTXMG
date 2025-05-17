@@ -973,15 +973,15 @@ void MonguriUserInterface::BuildUIMain(int2 screenLayoutSize)
             if (ImGui::BeginCombo("Output", renderer.GetOutputLabel(renderer.GetOutputIndex()),
                 ImGuiComboFlags_HeightLarge))
             {
-                for (uint32_t outputIndex = uint32_t(RTXMGRenderer::Output::Accumulation);
-                    outputIndex < uint32_t(RTXMGRenderer::Output::Count);
+                for (uint32_t outputIndex = uint32_t(MonguriRenderer::Output::Accumulation);
+                    outputIndex < uint32_t(MonguriRenderer::Output::Count);
                     outputIndex++)
                 {
                     bool isSelected = outputIndex == uint32_t(renderer.GetOutputIndex());
 
-                    if (ImGui::Selectable(renderer.GetOutputLabel(RTXMGRenderer::Output(outputIndex)), isSelected))
+                    if (ImGui::Selectable(renderer.GetOutputLabel(MonguriRenderer::Output(outputIndex)), isSelected))
                     {
-                        renderer.SetOutputIndex(RTXMGRenderer::Output(outputIndex));
+                        renderer.SetOutputIndex(MonguriRenderer::Output(outputIndex));
                         renderer.ResetSubframes();
                     }
                     if (isSelected)

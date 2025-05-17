@@ -36,7 +36,7 @@
 
 #include "args.h"
 #include "monguri_demo.h"
-#include "rtxmg_renderer.h"
+#include "monguri_renderer.h"
 #include "monguri_gui.h"
 #include "zrenderer.h"
 #include "trackball.h"
@@ -90,7 +90,7 @@ private:
     std::chrono::steady_clock::time_point m_prevFrameStart = {};
     float m_animationTime = 0.0f;
 
-    std::unique_ptr<RTXMGRenderer> m_renderer;
+    std::unique_ptr<MonguriRenderer> m_renderer;
     std::unique_ptr<ZRenderer> m_zRenderer;
 
     nvrhi::BufferHandle m_lerpKeyFramesParamsBuffer;
@@ -173,7 +173,7 @@ public:
     void HandleSceneLoad(std::string const& m_filepath,
         std::string const& mediapathm, int2 frameRange = { std::numeric_limits<int>::max(), std::numeric_limits<int>::min() });
     const RTXMGScene& GetScene() const { return *m_scene; }
-    RTXMGRenderer& GetRenderer();
+    MonguriRenderer& GetRenderer();
 
     float GetCPUFrameTime() const;
 
