@@ -215,6 +215,10 @@ void MonguriRenderer::BuildOrUpdatePipelines()
         {
             log::fatal("Failed to create ray tracing pipeline");
         }
+        if (!CreateGraphicsPipeline(*m_shaderFactory))
+        {
+            log::fatal("Failed to create rasterize pipeline");
+        }
         ResetSubframes();
         m_pipelinesNeedsUpdate = false;
     }
@@ -855,6 +859,44 @@ bool MonguriRenderer::CreateRayTracingPipeline(
     m_shaderTable->addHitGroup("ShadowHitGroup");
     m_shaderTable->addMissShader("Miss");
     m_shaderTable->addMissShader("ShadowMiss");
+
+    return true;
+}
+
+bool MonguriRenderer::CreateGraphicsPipeline(
+    engine::ShaderFactory& shaderFactory)
+{
+    m_shaderLibraryRasterize =
+        shaderFactory.CreateShaderLibrary("rtxmg_demo/monguri_demo.hlsl", nullptr);
+
+    if (!m_shaderLibraryRasterize)
+        return false;
+
+    nvrhi::rt::PipelineDesc pipelineDesc;
+    pipelineDesc.globalBindingLayouts = { m_bindingLayout, m_bindlessLayout };
+    pipelineDesc.shaders =
+    {
+        {"",m_shaderLibraryRasterize->getShader("VS_WVP", nvrhi::ShaderType::Vertex),nullptr},
+        {"", m_shaderLibraryRasterize->getShader("PS_Wireframe", nvrhi::ShaderType::Pixel),nullptr},
+    };
+
+#if 0
+    pipelineDesc.maxPayloadSize = sizeof(RayPayload);
+    pipelineDesc.maxRecursionDepth = m_params.ptMaxBounces + 1;
+    pipelineDesc.hlslExtensionsUAV = int32_t(RTXMG_NVAPI_SHADER_EXT_SLOT);
+#endif
+
+    //TODO: monguri_demo.hlslはレイトレシェーダではないのでここで実行時エラーになる
+    // 続きをやるなら、CreateGraphicsPipelineを使う必要がある
+    m_rasterizePipeline = GetDevice()->createRayTracingPipeline(pipelineDesc);
+
+    if (!m_rasterizePipeline)
+        return false;
+
+    m_shaderTableRasterize = m_rasterizePipeline->createShaderTable();
+
+    if (!m_shaderTableRasterize)
+        return false;
 
     return true;
 }

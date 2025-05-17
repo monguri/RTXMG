@@ -372,6 +372,7 @@ private:
     nvrhi::IDevice* GetDevice() const { return m_options.device; }
 
     bool CreateRayTracingPipeline(ShaderFactory& shaderFactory);
+    bool CreateGraphicsPipeline(ShaderFactory& shaderFactory);
 
     void FillInstanceDescs(nvrhi::ICommandList* commandList, nvrhi::IBuffer* outInstanceDescs, nvrhi::IBuffer* blasAddresses, uint32_t numInstances);
 
@@ -409,6 +410,9 @@ private:
     nvrhi::BindingLayoutHandle m_bindingLayout;
     nvrhi::BindingSetHandle m_bindingSet;
     nvrhi::BindingLayoutHandle m_bindlessLayout;
+
+    nvrhi::rt::PipelineHandle m_rasterizePipeline;
+    nvrhi::rt::ShaderTableHandle m_shaderTableRasterize;
 
     nvrhi::BufferHandle m_dummyBuffer;
 
@@ -461,6 +465,7 @@ private:
     std::shared_ptr<RTXMGScene> m_scene;
 
     nvrhi::ShaderLibraryHandle m_shaderLibrary;
+    nvrhi::ShaderLibraryHandle m_shaderLibraryRasterize;
 
     std::shared_ptr<ShaderFactory> m_shaderFactory;
     std::shared_ptr<CommonRenderPasses> m_commonPasses;
