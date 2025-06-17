@@ -50,11 +50,11 @@ struct ShaderDebugElement
         PayloadType_Float4
     };
 
-    uint payloadType;
-    uint lineNumber;
-
     uint4 uintData;
     float4 floatData;
+    uint payloadType;
+    uint lineNumber;
+    uint2 pad0;
 
 
 #ifdef __cplusplus

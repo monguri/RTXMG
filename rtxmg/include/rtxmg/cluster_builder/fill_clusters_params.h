@@ -48,7 +48,8 @@ struct FillClustersParams
 
     float globalDisplacementScale;
     uint32_t clusterPattern;
-    uint2 pad0;
+    uint32_t debugClusterIndex;
+    uint32_t debugLaneIndex;
 };
 
 #endif // FILL_CLUSTERS_PARAMS_H

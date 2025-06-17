@@ -27,6 +27,10 @@
 #include "rtxmg/subdivision/subdivision_plan_hlsl.h"
 #include "rtxmg/subdivision/vertex.h"
 
+#ifndef SHADER_DEBUG
+#define SHADER_DEBUG(x) 
+#endif
+
 // SURFACE_TYPE
 #define SURFACE_TYPE_PUREBSPLINE 0
 #define SURFACE_TYPE_REGULARBSPLINE 1

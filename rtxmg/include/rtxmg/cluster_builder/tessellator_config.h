@@ -98,6 +98,7 @@ struct TessellatorConfig
     const ZBuffer* zbuffer = nullptr;
 
     int debugSurfaceIndex = 0;
+    int debugClusterIndex = 0;
     int debugLaneIndex = 0;
 
     bool hasValidDebugIndex() const { return debugSurfaceIndex >= 0 && debugLaneIndex >= 0; }

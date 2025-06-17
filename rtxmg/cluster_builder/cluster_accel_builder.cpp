@@ -651,6 +651,8 @@ void ClusterAccelBuilder::FillInstanceClusters(const RTXMGScene& scene, ClusterA
         params.globalDisplacementScale = m_tessellatorConfig.displacementScale;
         params.clusterPattern = uint32_t(m_tessellatorConfig.clusterPattern);
         params.firstGeometryIndex = firstGeometryIndex;
+        params.debugClusterIndex = uint32_t(m_tessellatorConfig.debugClusterIndex);
+        params.debugLaneIndex = uint32_t(m_tessellatorConfig.debugLaneIndex);
         commandList->writeBuffer(m_fillClustersParamsBuffer, &params, sizeof(FillClustersParams));
 
         auto bindingSetDesc = nvrhi::BindingSetDesc()

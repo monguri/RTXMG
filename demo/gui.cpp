@@ -576,10 +576,14 @@ void UserInterface::BuildUIMain(int2 screenLayoutSize)
         int2& debugPixel = renderer.GetDebugPixel();
         ImGui::InputInt2("DebugPixel (Right-click)", debugPixel.data());
                 
-        if (ImGui::InputInt2("Tessellator Debug (Surface, Lane)", m_app.GetDebugSurfaceLaneIndex().data()))
+        if (ImGui::InputInt3("Tessellator Debug (Surface, Cluster, Lane)", m_app.GetDebugSurfaceClusterLaneIndex().data()))
         {
             m_app.RebuildAS();
         }
+        if (ImGui::IsItemHovered() &&
+            ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
+            ImGui::SetTooltip("Set surface >=0 and lane >=0 to debug compute cluster tiling.\n"
+                "Set cluster >=0 and lane >=0 to debug fill clusters.\n");
 #endif
     }
 #endif

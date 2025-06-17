@@ -105,7 +105,7 @@ private:
     bool m_dumpDebugBuffer = false;
     bool m_dumpPixelDebug = false;
 
-    std::array<int, 2> m_debugSurfaceLaneIndex = { -1, -1 };
+    std::array<int, 3> m_debugSurfaceClusterLaneIndex = { -1, -1, -1 };
 
     // DLSS State
 #if DONUT_WITH_STREAMLINE
@@ -245,7 +245,7 @@ public:
     bool GetAccelBuildLoggingEnabled() const { return m_args.enableAccelBuildLogging; }
     void SetAccelBuildLoggingEnabled(bool enabled) { m_args.enableAccelBuildLogging = enabled; }
 
-    std::array<int, 2>& GetDebugSurfaceLaneIndex() { return m_debugSurfaceLaneIndex; }
+    std::array<int, 3>& GetDebugSurfaceClusterLaneIndex() { return m_debugSurfaceClusterLaneIndex; }
 
     // Desired denoiser mode
     void SetDenoiserMode(DenoiserMode denoiserMode);
