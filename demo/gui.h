@@ -165,8 +165,6 @@ struct UIData
 {
     bool showUI = true;
 
-    static const char* WindowTitle;
-
     // path to imgui.ini settings file (auto-saved by imgui)
     std::string iniFilepath;
 

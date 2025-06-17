@@ -43,9 +43,12 @@
 
 #include "lerp_keyframes_params.h"
 
-
 #define GLFW_INCLUDE_NONE // Do not include any OpenGL headers
 #include <GLFW/glfw3.h>
+
+#if DONUT_WITH_VULKAN
+#include <vulkan/vulkan.hpp>
+#endif
 
 using namespace donut;
 
@@ -183,6 +186,7 @@ bool RTXMGDemoApp::SetEnvmapTex(const std::string& filePath)
 }
 
 RTXMGDemoApp::RTXMGDemoApp(app::DeviceManager* deviceManager,
+    std::string &windowTitle,
     int argc, const char** argv)
     : app::ApplicationBase(deviceManager)
     , m_messageCallback(deviceManager)
@@ -236,7 +240,7 @@ RTXMGDemoApp::RTXMGDemoApp(app::DeviceManager* deviceManager,
 #endif
 
     if (!deviceManager->CreateWindowDeviceAndSwapChain(deviceParams,
-        UIData::WindowTitle))
+        windowTitle.c_str()))
     {
         log::fatal(
             "Cannot initialize a graphics device with the requested parameters");
@@ -290,31 +294,67 @@ bool RTXMGDemoApp::Init()
     // Check to see if we have enough vram to run the demo
 
     std::vector<app::AdapterInfo> adapters;
-
     if (!GetDeviceManager()->EnumerateAdapters(adapters))
     {
         donut::log::fatal("Failed to enumerate adapters for vram check");
     }
 
-    ID3D12Device* rawDevice = (ID3D12Device*)GetDevice()->getNativeObject(nvrhi::ObjectTypes::D3D12_Device);
+    app::AdapterInfo::LUID luid = {};
+    app::AdapterInfo::UUID uuid = {};
 
-    for (const auto& adapter : adapters)
+    const app::AdapterInfo* pAdapter = nullptr;
+    if (GetDevice()->getGraphicsAPI() == nvrhi::GraphicsAPI::D3D12)
     {
-        LUID rawLuid = rawDevice->GetAdapterLuid();
+        ID3D12Device* rawDevice = (ID3D12Device*)GetDevice()->getNativeObject(nvrhi::ObjectTypes::D3D12_Device);
+        LUID dxLuid = rawDevice->GetAdapterLuid();
+        static_assert(luid.size() == sizeof(dxLuid));
+        memcpy(luid.data(), &dxLuid, luid.size());
 
-        if (!memcmp(&adapter.luid, &rawLuid, sizeof(LUID)))
+        for (const auto& adapter : adapters)
         {
-            size_t vram = adapter.dedicatedVideoMemory;
-            if (vram < kMinVram * kGigabyte)
+            if (adapter.luid == luid)
             {
-                donut::log::error("GPU has %.2fGB of VRAM and is below the required %dGB.\n\n"
-                    "Expect the following:\n"
-                    "1. Performance degradation or out of memory crashes.\n"
-                    "2. Flickering and missing surfaces after adjusting the memory budget down", float(vram) / kGigabyte, kMinVram);
+                pAdapter = &adapter;
+                break;
             }
         }
     }
+    else if (GetDevice()->getGraphicsAPI() == nvrhi::GraphicsAPI::VULKAN)
+    {
+        vk::PhysicalDevice rawDevice = (VkPhysicalDevice)GetDevice()->getNativeObject(nvrhi::ObjectTypes::VK_PhysicalDevice).pointer;
+        vk::PhysicalDeviceProperties2 properties2;
+        vk::PhysicalDeviceIDProperties idProperties;
+        properties2.pNext = &idProperties;
+        rawDevice.getProperties2(&properties2);
 
+        app::AdapterInfo::UUID uuid;
+        static_assert(uuid.size() == idProperties.deviceUUID.size());
+        memcpy(uuid.data(), idProperties.deviceUUID.data(), uuid.size());
+        
+        for (const auto& adapter : adapters)
+        {
+            if (adapter.uuid == uuid)
+            {
+                pAdapter = &adapter;
+                break;
+            }
+        }
+    }
+    
+    if (!pAdapter)
+    {
+        donut::log::fatal("Failed to find active adapter for vram check");
+    }
+
+    size_t vram = pAdapter->dedicatedVideoMemory;
+    if (vram < kMinVram * kGigabyte)
+    {
+        donut::log::error("GPU has %.2fGB of VRAM and is below the required %dGB.\n\n"
+            "Expect the following:\n"
+            "1. Performance degradation or out of memory crashes.\n"
+            "2. Flickering and missing surfaces after adjusting the memory budget down", float(vram) / kGigabyte, kMinVram);
+    }
+        
     std::filesystem::path sceneFileName;
     if (!m_args.meshInputFile.empty())
     {
@@ -385,7 +425,7 @@ void RTXMGDemoApp::HandleSceneLoad(const std::string& sceneFileName,
 
     UpdateParams();
 
-    m_zRenderer = std::make_unique<ZRenderer>(renderer.GetShaderFactory(), renderer.GetDescriptorTable());
+    m_zRenderer = std::make_unique<ZRenderer>(renderer.GetShaderFactory());
 
     m_commandList->open();
     {
@@ -844,6 +884,8 @@ void RTXMGDemoApp::Render(nvrhi::IFramebuffer* framebuffer)
     profiler.FrameStart(m_currFrameStart);
     m_commandList->open();
     {
+        renderer.CreateOutputs(m_commandList);
+
         std::string frameMarker = "Frame Rendering " + std::to_string(GetFrameIndex());
         nvrhi::utils::ScopedMarker marker(m_commandList, frameMarker.c_str());
 
@@ -872,8 +914,9 @@ void RTXMGDemoApp::Render(nvrhi::IFramebuffer* framebuffer)
                 .displacementScale = m_renderParams.globalDisplacementScale,
                 .camera = &m_tesselationCamera,
                 .zbuffer = renderer.GetZBuffer(),
-                .debugSurfaceIndex = m_debugSurfaceLaneIndex[0],
-                .debugLaneIndex = m_debugSurfaceLaneIndex[1],
+                .debugSurfaceIndex = m_debugSurfaceClusterLaneIndex[0],
+                .debugClusterIndex = m_debugSurfaceClusterLaneIndex[1],
+                .debugLaneIndex = m_debugSurfaceClusterLaneIndex[2],
             };
 
             renderer.UpdateAccelerationStructures(tessConfig, m_BuildStats, GetFrameIndex(), m_commandList);
@@ -883,11 +926,10 @@ void RTXMGDemoApp::Render(nvrhi::IFramebuffer* framebuffer)
         if (m_args.updateTessCamera)
         {
             ZBuffer* zbuffer = renderer.GetZBuffer();
-            if (zbuffer)
-            {
-                m_zRenderer->Render(m_camera, renderer.GetTopLevelAS(), zbuffer->GetCurrent(), m_commandList);
-                zbuffer->ReduceHierarchy(m_commandList);
-            }
+            
+            m_zRenderer->Render(m_camera, renderer.GetTopLevelAS(), zbuffer->GetCurrent(), m_commandList);
+            zbuffer->ReduceHierarchy(m_commandList);
+
             m_tesselationCamera = m_camera;
         }
 

@@ -13,13 +13,14 @@ target_include_directories(${lib} PUBLIC
 target_link_libraries(${lib} donut_engine subdivision)
 set_target_properties(${lib} PROPERTIES FOLDER ${folder})
 
-donut_compile_shaders(
+donut_compile_shaders_all_platforms(
     TARGET ${lib}_shaders
     CONFIG ${CMAKE_CURRENT_SOURCE_DIR}/shaders.cfg
     FOLDER ${folder}
     SOURCES ${shaders}
-    DXIL ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders/${lib}/dxil
-    SHADERMAKE_OPTIONS_DXIL ${RTXMG_SHADERMAKE_OPTIONS_DXIL}
+    OUTPUT_BASE ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders/${lib}
+    SHADERMAKE_OPTIONS ${RTXMG_SHADERMAKE_OPTIONS}
+    SHADERMAKE_OPTIONS_SPIRV ${RTXMG_SHADERMAKE_OPTIONS_SPIRV}
     SHADER_MODEL ${RTXMG_SHADERS_SHADERMODEL}
     IGNORE_INCLUDES ${RTXMG_SHADERS_IGNORED_INCLUDES}
     INCLUDES ${RTXMG_SHADERS_INCLUDE_DIR}

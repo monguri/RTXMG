@@ -24,9 +24,10 @@
 
 #include "gbuffer.h"
 #include "utils.hlsli"
+#include <donut/shaders/binding_helpers.hlsli>
 
 ConstantBuffer<BlitParams> g_Params : register(b0);
-RWTexture2D<float4> g_Output : register(u0);
+VK_IMAGE_FORMAT_UNKNOWN RWTexture2D<float4> g_Output : register(u0);
 Texture2D<float4> g_Input : register(t0);
 Texture2D<float4> g_InputSplitScreen : register(t1);
 
@@ -126,7 +127,7 @@ void main(uint3 threadIdx : SV_DispatchThreadID)
         switch (g_Params.m_blitDecodeMode)
         {
         case BlitDecodeMode::SingleChannel:
-            input = g_Input.Sample(g_Sampler, uv).rrr;
+            input = g_Input.SampleLevel(g_Sampler, uv, 0).rrr;
             break;
         case BlitDecodeMode::Depth:
             input = (g_Input[inputPos].rrr - g_Params.m_zNear) / (g_Params.m_zFar - g_Params.m_zNear);
@@ -157,13 +158,13 @@ void main(uint3 threadIdx : SV_DispatchThreadID)
             input = float3(frac(g_HitResult[hitResultIndex].texcoord), 0);
             break;
         case BlitDecodeMode::None:
-            input = g_Input.Sample(g_Sampler, uv).xyz;
+            input = g_Input.SampleLevel(g_Sampler, uv, 0).xyz;
             break;
         }
     }
     else
     {
-        input = g_InputSplitScreen.Sample(g_Sampler, uv).xyz;
+        input = g_InputSplitScreen.SampleLevel(g_Sampler, uv, 0).xyz;
     }
 
     input = expose(input);

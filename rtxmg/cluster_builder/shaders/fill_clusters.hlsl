@@ -83,7 +83,6 @@ RWStructuredBuffer<ShaderDebugElement> u_Debug : register(u2);
 
 SamplerState s_DisplacementSampler : register(s0);
 
-VK_BINDING(1, 1) Texture2D t_BindlessTextures[] : register(t0, space2);
 
 ConstantBuffer<FillClustersParams> g_TessParams : register(b0);
 
@@ -154,7 +153,6 @@ void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_Gr
     MaterialConstants material = t_MaterialConstants[geometry.materialIndex];
 
     GetDisplacement(material, g_TessParams.globalDisplacementScale, displacementTexIndex, displacementScale);
-    Texture2D displacementTex = t_BindlessTextures[displacementTexIndex];
 #endif
 
 #if SURFACE_TYPE == SURFACE_TYPE_PUREBSPLINE && ENABLE_GROUP_PUREBSPLINE
@@ -183,10 +181,14 @@ void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_Gr
 #endif
 
 #if DISPLACEMENT_MAPS
-            limit = DoDisplacement(texcoordEval,
+            if (displacementTexIndex >= 0)
+            {
+                Texture2D<float> displacementTexture = ResourceDescriptorHeap[NonUniformResourceIndex(displacementTexIndex)];
+                limit = DoDisplacement(texcoordEval,
                         limit, iSurface, uv,
-                        displacementTex,
+                        displacementTexture,
                         s_DisplacementSampler, displacementScale);
+            }
 #endif
 
             GathererWriteLimit(limit, rCluster, pointIndex);

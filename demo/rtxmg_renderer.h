@@ -128,7 +128,7 @@ public:
         nvrhi::ICommandList* commandList);
     void ReloadShaders();
     void BuildOrUpdatePipelines();
-
+    void CreateOutputs(nvrhi::ICommandList* commandList);
     void Launch(nvrhi::ICommandList* commandList, uint32_t frameIndex,
         std::shared_ptr<Light> light);
     void BlitFramebuffer(nvrhi::ICommandList* commandList, nvrhi::IFramebuffer* framebuffer);
@@ -366,8 +366,6 @@ public:
     std::shared_ptr<LoadedTexture> GetEnvMap() const { return m_envMap; }
     void ClearEnvMap() { m_envMap = nullptr; }
 private:
-
-    void CreateOutputs(nvrhi::ICommandList* commandList);
 
     nvrhi::IDevice* GetDevice() const { return m_options.device; }
 

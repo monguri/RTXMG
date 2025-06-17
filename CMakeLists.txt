@@ -1,4 +1,3 @@
-
 cmake_minimum_required(VERSION 3.10)
 
 project(rtxmg LANGUAGES C CXX VERSION 0.9.2)
@@ -46,7 +45,7 @@ endif()
 # DXC
 # WindowsSDK version is buggy and the compiler crashes
 ####################################
-include("${PROJECT_SOURCE_DIR}/CMake/FetchDXC.cmake")
+set(SHADERMAKE_FIND_DXC ON CACHE BOOL "" FORCE)
 
 ####################################
 # Streamline
@@ -67,7 +66,7 @@ include("${PROJECT_SOURCE_DIR}/CMake/FetchNVAPI.cmake")
 # DONUT
 ####################################
 option(DONUT_WITH_DX11 OFF)
-option(DONUT_WITH_VULKAN OFF "Enable the Vulkan version of Donut")
+set(DONUT_WITH_VULKAN ON CACHE BOOL "Enable the Vulkan version of Donut")
 set(NVRHI_WITH_NVAPI ON CACHE BOOL "" FORCE)
 set(DONUT_WITH_AFTERMATH ON CACHE BOOL "" FORCE)
 set(NVRHI_INSTALL OFF CACHE BOOL "" FORCE)
@@ -84,7 +83,12 @@ list(APPEND RTXMG_SHADERS_INCLUDE_DIR
 "${nvapi_SOURCE_DIR}"
 "${PROJECT_SOURCE_DIR}/extern/donut/nvrhi/include")
 
-set(RTXMG_SHADERMAKE_OPTIONS_DXIL "--embedPDB --hlsl2021")
+set(RTXMG_SHADERMAKE_OPTIONS "--embedPDB --hlsl2021")
+
+#-vd disable validator due to a bug in 
+# https://github.com/microsoft/DirectXShaderCompiler/issues/7181
+# should be fixed in version 1.8.2505
+set(RTXMG_SHADERMAKE_OPTIONS_SPIRV "--vulkanMemoryLayout scalar --compilerOptions -Vd") 
 set(RTXMG_SHADERS_SHADERMODEL "6_6")
 
 set(RTXMG_SHADERS_IGNORED_INCLUDES "")

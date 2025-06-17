@@ -74,8 +74,8 @@ private:
     nvrhi::DeviceHandle m_device;
     std::array<nvrhi::TimerQueryHandle, kMaxInFlightQueries> m_timerQueries;
     nvrhi::CommandListHandle m_commandList;
-    int32_t m_queryIndex = 0;
-    int32_t m_unresolvedQueryIndex = 0;
+    int32_t m_queryIndex = -1;
+    int32_t m_unresolvedQueryIndex = -1;
     float m_lastDuration = 0.f;
     bool m_hasLastDuration = false;
 

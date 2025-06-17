@@ -51,21 +51,21 @@ StructuredBuffer<GeometryData>      t_GeometryData          : register(t4);
 StructuredBuffer<MaterialConstants> t_MaterialConstants     : register(t5);
 
 
-RWTexture2D<float2>                 u_MotionVectors         : register(u0);
+VK_IMAGE_FORMAT_UNKNOWN RWTexture2D<float2>                 u_MotionVectors         : register(u0);
 
 #if ENABLE_SHADER_DEBUG
 RWStructuredBuffer<ShaderDebugElement> u_PixelDebug          : register(u1);
 #endif
 
 
-VK_BINDING(0, 1) ByteAddressBuffer t_BindlessBuffers[]  : register(t0, space1);
-VK_BINDING(1, 1) Texture2D t_BindlessTextures[]         : register(t0, space2);
 
 SamplerState                        s_DisplacementSampler : register(s0);
+
 
 static DynamicSubdivisionEvaluatorHLSL MakeDynamicSubdivisionEvaluator(SubdInstance subdInstance, uint32_t surfaceIndex)
 {
     DynamicSubdivisionEvaluatorHLSL result;
+
     result.m_plans = ResourceDescriptorHeap[NonUniformResourceIndex(subdInstance.plansBindlessIndex)];
     result.m_stencilMatrix = ResourceDescriptorHeap[NonUniformResourceIndex(subdInstance.stencilMatrixBindlessIndex)];
     result.m_subpatchTrees = ResourceDescriptorHeap[NonUniformResourceIndex(subdInstance.subpatchTreesBindlessIndex)];
@@ -147,9 +147,9 @@ void main(uint3 threadIdx : SV_DispatchThreadID)
             GetDisplacement(material, g_RenderParams.globalDisplacementScale, displacementTexIndex, displacementScale);
             if (displacementTexIndex >= 0)
             {
-                Texture2D displacementTex = t_BindlessTextures[NonUniformResourceIndex(displacementTexIndex)];
+                Texture2D<float> displacementTex = ResourceDescriptorHeap[NonUniformResourceIndex(displacementTexIndex)];
 
-                float displacement = displacementTex.SampleLevel(s_DisplacementSampler, hit.texcoord, 0).r * displacementScale;
+                float displacement = displacementTex.SampleLevel(s_DisplacementSampler, hit.texcoord, 0) * displacementScale;
                 float3 normal = normalize(cross(limitPrev.deriv1, limitPrev.deriv2));
                 displacementVec = displacement * normal;
             }

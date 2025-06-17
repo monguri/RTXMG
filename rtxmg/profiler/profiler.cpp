@@ -38,17 +38,18 @@
 #include <variant>
 
 // clang-format on
+static Profiler *s_profiler = nullptr;
 
 Profiler& Profiler::Get()
 {
-    static Profiler profiler;
-    return profiler;
+    if (!s_profiler)
+        s_profiler = new Profiler();
+    return *s_profiler;
 }
 
 void Profiler::Terminate()
 {
-    for (auto& timer : m_gpuTimers)
-        timer.reset();
+    delete s_profiler;
 }
 
 using CPUTimer = Profiler::Timer<StopwatchCPU>;

@@ -97,9 +97,7 @@ RTXMGRenderer::RTXMGRenderer(Options const& opts)
     bindlessLayoutDesc.visibility = nvrhi::ShaderType::All;
     bindlessLayoutDesc.firstSlot = 0;
     bindlessLayoutDesc.maxCapacity = 1024;
-    bindlessLayoutDesc.registerSpaces = {
-        nvrhi::BindingLayoutItem::RawBuffer_SRV(1),
-        nvrhi::BindingLayoutItem::Texture_SRV(2) };
+    bindlessLayoutDesc.layoutType = nvrhi::BindlessLayoutDesc::LayoutType::MutableSrvUavCbv;
     m_bindlessLayout = GetDevice()->createBindlessLayout(bindlessLayoutDesc);
 
     nvrhi::BindingLayoutDesc globalBindingLayoutDesc;
@@ -139,9 +137,15 @@ RTXMGRenderer::RTXMGRenderer(Options const& opts)
 #if ENABLE_SHADER_DEBUG
         nvrhi::BindingLayoutItem::StructuredBuffer_UAV(12),  // pixel debug buffer
 #endif
-        nvrhi::BindingLayoutItem::TypedBuffer_UAV(13),       // Timeview buffer
-        nvrhi::BindingLayoutItem::TypedBuffer_UAV(RTXMG_NVAPI_SHADER_EXT_SLOT), // for nvidia extensions
+        nvrhi::BindingLayoutItem::TypedBuffer_UAV(13)        // Timeview buffer
     };
+
+    if (GetDevice()->getGraphicsAPI() == nvrhi::GraphicsAPI::D3D12)
+    {
+        // for nvidia extensions
+        globalBindingLayoutDesc.bindings.push_back(nvrhi::BindingLayoutItem::TypedBuffer_UAV(RTXMG_NVAPI_SHADER_EXT_SLOT)); 
+    }
+    
     m_bindingLayout = GetDevice()->createBindingLayout(globalBindingLayoutDesc);
 
     m_descriptorTable = std::make_shared<engine::DescriptorTableManager>(
@@ -452,8 +456,6 @@ void RTXMGRenderer::Launch(nvrhi::ICommandList* commandList,
     uint32_t frameIndex,
     std::shared_ptr<engine::Light> light)
 {
-    CreateOutputs(commandList);
-
     BuildOrUpdatePipelines();
 
     if (m_needsEnvMapUpdate)
@@ -512,9 +514,14 @@ void RTXMGRenderer::Launch(nvrhi::ICommandList* commandList,
         #if ENABLE_SHADER_DEBUG
             nvrhi::BindingSetItem::StructuredBuffer_UAV(12, m_pixelDebugBuffer),
         #endif
-            nvrhi::BindingSetItem::TypedBuffer_UAV(13, m_timeViewBuffer),
-            nvrhi::BindingSetItem::TypedBuffer_UAV(RTXMG_NVAPI_SHADER_EXT_SLOT, nullptr) // for nvidia extensions
+            nvrhi::BindingSetItem::TypedBuffer_UAV(13, m_timeViewBuffer)
         };
+
+        if (GetDevice()->getGraphicsAPI() == nvrhi::GraphicsAPI::D3D12)
+        {
+            bindingSetDesc.bindings.push_back(nvrhi::BindingSetItem::TypedBuffer_UAV(RTXMG_NVAPI_SHADER_EXT_SLOT, nullptr)); // for nvidia extensions
+        }
+
 
         m_bindingSet =
             GetDevice()->createBindingSet(bindingSetDesc, m_bindingLayout);
@@ -560,7 +567,7 @@ void RTXMGRenderer::Launch(nvrhi::ICommandList* commandList,
         ComputeMotionVectors(commandList);
     }
 
-    if (m_displayZBuffer && m_zbuffer)
+    if (m_displayZBuffer)
     {
         m_zbuffer->Display(m_outputTextures[uint32_t(OutputTexture::Accumulation)], commandList);
     }

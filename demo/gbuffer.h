@@ -30,9 +30,9 @@
 #define GBUFFER_H
 
 typedef float DepthFormat;
-typedef float3 NormalFormat;
-typedef float3 AlbedoFormat;
-typedef float3 SpecularFormat;
+typedef float4 NormalFormat;
+typedef float4 AlbedoFormat;
+typedef float4 SpecularFormat;
 typedef float SpecularHitTFormat;
 typedef float RoughnessFormat;
 

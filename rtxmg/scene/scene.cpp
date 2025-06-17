@@ -65,6 +65,7 @@ RTXMGScene::RTXMGScene(nvrhi::IDevice* device,
     m_isoLevelSmooth(isoLevelSmooth)
 {
     m_attributes.frameRange = initialFrameRange;
+    m_UseResourceDescriptorHeapBindless = true;
 }
 
 void RTXMGScene::InsertModel(Model&& model)

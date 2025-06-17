@@ -96,8 +96,8 @@ RWStructuredBuffer<ShaderDebugElement> u_Debug : register(u8);
 SamplerState s_DisplacementSampler : register(s0);
 SamplerState s_HizSampler : register(s1);
 
-VK_BINDING(1, 1) Texture2D t_BindlessTextures[] : register(t0, space2);
-Texture2D<float> t_HiZBuffer[HIZ_MAX_LODS]: register(t0, space3);
+VK_BINDING(0, 1) Texture2D<float> t_HiZBuffer[HIZ_MAX_LODS]: register(t0, space1);
+
 
 const static uint32_t nSamples = kComputeClusterTilingWaves * kNumWaveSurfaceUVSamples;
 groupshared LimitFrame samples[nSamples];
@@ -409,12 +409,12 @@ void WaveEvaluateBSplinePatch8(uint32_t iWave,
     float displacementScale;
     int displacementTexIndex;
     GetDisplacement(material, g_Params.globalDisplacementScale, displacementTexIndex, displacementScale);
-    Texture2D displacementTex = t_BindlessTextures[displacementTexIndex];
-    if (iLane < kNumWaveSurfaceUVSamples)
+    if (displacementTexIndex >= 0 && iLane < kNumWaveSurfaceUVSamples)
     {
+        Texture2D<float> displacementTexture = ResourceDescriptorHeap[NonUniformResourceIndex(displacementTexIndex)];
         LimitFrame displaced = DoDisplacement(texcoordEval,
             samples[waveSampleOffset + iLane], subd.m_surfaceIndex, kWaveSurfaceUVSamples[iLane],
-            displacementTex,
+            displacementTexture,
             s_DisplacementSampler, displacementScale);
         samples[waveSampleOffset + iLane] = displaced;
     }

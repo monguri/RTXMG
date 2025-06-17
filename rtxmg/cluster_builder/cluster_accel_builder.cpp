@@ -63,7 +63,7 @@ using namespace nvrhi::rt;
 constexpr uint32_t kNumTemplates = kMaxClusterEdgeSegments * kMaxClusterEdgeSegments;
 constexpr uint32_t kClusterMaxTriangles = kMaxClusterEdgeSegments * kMaxClusterEdgeSegments * 2;
 constexpr uint32_t kClusterMaxVertices = (kMaxClusterEdgeSegments + 1) * (kMaxClusterEdgeSegments + 1);
-constexpr uint32_t kTessBufferFrameCount = 4;
+constexpr uint32_t kFrameCount = 4;
 
 ClusterAccelBuilder::ClusterAccelBuilder(donut::engine::ShaderFactory& shaderFactory,
     std::shared_ptr<donut::engine::CommonRenderPasses> commonPasses,
@@ -74,7 +74,7 @@ ClusterAccelBuilder::ClusterAccelBuilder(donut::engine::ShaderFactory& shaderFac
     , m_commonPasses(commonPasses)
     , m_device(device)
 {
-    m_tessellationCountersBuffer.Create(kTessBufferFrameCount, "tesselation counters", m_device);
+    m_tessellationCountersBuffer.Create(kFrameCount, "tesselation counters", m_device);
     m_debugBuffer.Create(64, "ClusterAccelDebug", m_device);
         
     //////////////////////////////////////////////////
@@ -89,11 +89,18 @@ ClusterAccelBuilder::ClusterAccelBuilder(donut::engine::ShaderFactory& shaderFac
     m_fillClustersParamsBuffer = m_device->createBuffer(nvrhi::utils::CreateVolatileConstantBufferDesc(
         sizeof(FillClustersParams), "FillClustersParams", engine::c_MaxRenderPassConstantBufferVersions));
 
-    m_copyClusterOffsetParamsBuffer = m_device->createBuffer(nvrhi::utils::CreateVolatileConstantBufferDesc(
-        sizeof(CopyClusterOffsetParams), "CopyClusterOffsetParams", engine::c_MaxRenderPassConstantBufferVersions));
-
     m_fillBlasFromClasArgsParamsBuffer = m_device->createBuffer(nvrhi::utils::CreateVolatileConstantBufferDesc(
         sizeof(FillBlasFromClasArgsParams), "FillBlasFromClasArgsParams", engine::c_MaxRenderPassConstantBufferVersions));
+
+    //////////////////////////////////////////////////
+    // Create common bindless binding layout
+    //////////////////////////////////////////////////
+    nvrhi::BindlessLayoutDesc bindlessLayoutDesc;
+    bindlessLayoutDesc.visibility = nvrhi::ShaderType::All;
+    bindlessLayoutDesc.firstSlot = 0;
+    bindlessLayoutDesc.maxCapacity = 1024;
+    bindlessLayoutDesc.layoutType = nvrhi::BindlessLayoutDesc::LayoutType::MutableSrvUavCbv;
+    m_bindlessBL = m_device->createBindlessLayout(bindlessLayoutDesc);
 }
 
 // Must match shader defines in compute_cluster_tiling.hlsl
@@ -684,17 +691,6 @@ void ClusterAccelBuilder::FillInstanceClusters(const RTXMGScene& scene, ClusterA
             log::fatal("Failed to create binding set and layout for fill_clusters.hlsl");
         }
 
-        if (!m_fillClustersBindlessBL)
-        {
-            nvrhi::BindlessLayoutDesc bindlessLayoutDesc;
-            bindlessLayoutDesc.visibility = nvrhi::ShaderType::All;
-            bindlessLayoutDesc.firstSlot = 0;
-            bindlessLayoutDesc.maxCapacity = 1024;
-            bindlessLayoutDesc.registerSpaces = {
-                nvrhi::BindingLayoutItem::Texture_SRV(2) };
-            m_fillClustersBindlessBL = m_device->createBindlessLayout(bindlessLayoutDesc);
-        }
-
         auto GetFillClustersPSO = [this](const FillClustersPermutation& shaderPermutation)
             {
                 if (!m_fillClustersPSOs[shaderPermutation.index()])
@@ -707,7 +703,7 @@ void ClusterAccelBuilder::FillInstanceClusters(const RTXMGScene& scene, ClusterA
                     auto computePipelineDesc = nvrhi::ComputePipelineDesc()
                         .setComputeShader(shader)
                         .addBindingLayout(m_fillClustersBL)
-                        .addBindingLayout(m_fillClustersBindlessBL);
+                        .addBindingLayout(m_bindlessBL);
 
                     m_fillClustersPSOs[shaderPermutation.index()] = m_device->createComputePipeline(computePipelineDesc);
                 }
@@ -721,7 +717,7 @@ void ClusterAccelBuilder::FillInstanceClusters(const RTXMGScene& scene, ClusterA
             auto computePipelineDesc = nvrhi::ComputePipelineDesc()
                 .setComputeShader(shader)
                 .addBindingLayout(m_fillClustersBL)
-                .addBindingLayout(m_fillClustersBindlessBL);
+                .addBindingLayout(m_bindlessBL);
 
             m_fillClustersTexcoordsPSO = m_device->createComputePipeline(computePipelineDesc);
         }
@@ -768,19 +764,26 @@ void ClusterAccelBuilder::FillInstanceClusters(const RTXMGScene& scene, ClusterA
     }
 }
 
-void ClusterAccelBuilder::ComputeInstanceClusterTiling(uint32_t instanceIndex, 
-    const SubdivisionSurface& subdivisionSurface,
-    ClusterAccels& accels,
-    uint32_t firstGeometryIndex,
-    nvrhi::IBuffer* geometryBuffer,
-    nvrhi::IBuffer* materialBuffer,
-    nvrhi::ISampler* displacementSampler,
-    const donut::math::affine3& localToWorld,
+void ClusterAccelBuilder::ComputeInstanceClusterTiling(ClusterAccels& accels, 
+    const RTXMGScene& scene,
+    uint32_t instanceIndex,
     uint32_t surfaceOffset,
     uint32_t surfaceCount,
     const nvrhi::BufferRange& tessCounterRange,
     nvrhi::ICommandList* commandList)
 {
+
+    const auto& subdMeshes = scene.GetSubdMeshes();
+    const auto& instance = scene.GetSubdMeshInstances()[instanceIndex];
+
+    const SubdivisionSurface& subdivisionSurface = *subdMeshes[instance.meshID];
+
+    assert(instance.meshInstance.get());
+    const auto& donutMeshInfo = instance.meshInstance->GetMesh();
+    assert(donutMeshInfo.get());
+    uint32_t firstGeometryIndex = donutMeshInfo->geometries[0]->globalGeometryIndex;
+    const donut::math::affine3& localToWorld = instance.localToWorld;
+
     if (m_tessellatorConfig.hasValidDebugIndex())
     {
         commandList->clearBufferUInt(m_debugBuffer, 0);
@@ -820,8 +823,8 @@ void ClusterAccelBuilder::ComputeInstanceClusterTiling(uint32_t instanceIndex,
     auto bindingSetDesc = nvrhi::BindingSetDesc()
         .addItem(nvrhi::BindingSetItem::ConstantBuffer(0, m_computeClusterTilingParamsBuffer))
         .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(0, subdivisionSurface.m_positionsBuffer))
-        .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(1, geometryBuffer))
-        .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(2, materialBuffer))
+        .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(1, scene.GetGeometryBuffer()))
+        .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(2, scene.GetMaterialBuffer()))
         .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(3, subdivisionSurface.m_surfaceToGeometryIndexBuffer))
         .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(4, subdivisionSurface.m_vertexDeviceData.surfaceDescriptors))
         .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(5, subdivisionSurface.m_vertexDeviceData.controlPointIndices))
@@ -836,7 +839,7 @@ void ClusterAccelBuilder::ComputeInstanceClusterTiling(uint32_t instanceIndex,
         .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(14, subdivisionSurface.m_texcoordDeviceData.controlPointIndices))
         .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(15, subdivisionSurface.m_texcoordDeviceData.patchPointsOffsets))
         .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(16, subdivisionSurface.m_texcoordsBuffer))
-        .addItem(nvrhi::BindingSetItem::Sampler(0, displacementSampler))
+        .addItem(nvrhi::BindingSetItem::Sampler(0, scene.GetDisplacementSampler()))
         .addItem(nvrhi::BindingSetItem::Sampler(1, m_commonPasses->m_LinearClampSampler)) // hiZ sampler
         
         .addItem(nvrhi::BindingSetItem::StructuredBuffer_UAV(0, m_gridSamplersBuffer,
@@ -852,18 +855,32 @@ void ClusterAccelBuilder::ComputeInstanceClusterTiling(uint32_t instanceIndex,
         .addItem(nvrhi::BindingSetItem::StructuredBuffer_UAV(8, m_debugBuffer));
 
     nvrhi::BindingSetHandle bindingSet;
-    if (!nvrhi::utils::CreateBindingSetAndLayout(m_device, nvrhi::ShaderType::Compute, 0, bindingSetDesc, m_computeClusterTilingBL, bindingSet))
+    if (!nvrhi::utils::CreateBindingSetAndLayout(m_device, nvrhi::ShaderType::Compute, 0, bindingSetDesc, m_computeClusterTilingBL, bindingSet, true))
     {
         log::fatal("Failed to create binding set and layout for compute_cluster_tiling.hlsl");
     }
 
-    auto hizDesc = ZBuffer::GetHiZDesc(m_tessellatorConfig.zbuffer, m_commonPasses->m_BlackTexture);
-
-    nvrhi::BindingSetHandle hizSet;
-    nvrhi::BindingLayoutHandle hizLayout;
-    if (!nvrhi::utils::CreateBindingSetAndLayout(m_device, nvrhi::ShaderType::Compute, 3, hizDesc, m_computeClusterTilingHizBL, hizSet))
+    nvrhi::BindingLayoutDesc hizLayoutDesc;
+    nvrhi::BindingSetDesc hizSetDesc;
+    m_tessellatorConfig.zbuffer->GetHiZDesc(&hizLayoutDesc, &hizSetDesc);
+    
+    if (!m_computeClusterTilingHizBL)
     {
-        log::fatal("Failed to create hiz binding set and layout for compute_cluster_tiling.hlsl");
+        hizLayoutDesc
+            .setVisibility(nvrhi::ShaderType::Compute)
+            .setRegisterSpace(1)
+            .setRegisterSpaceIsDescriptorSet(true);
+        m_computeClusterTilingHizBL = m_device->createBindingLayout(hizLayoutDesc);
+        if (!m_computeClusterTilingHizBL)
+        {
+            log::fatal("Failed to create hiz binding layout for compute_cluster_tiling.hlsl");
+        }
+    }
+
+    nvrhi::BindingSetHandle hizSet = m_device->createBindingSet(hizSetDesc, m_computeClusterTilingHizBL);
+    if (!hizSet)
+    {
+        log::fatal("Failed to create hiz binding set for compute_cluster_tiling.hlsl");
     }
 
     ComputeClusterTilingPermutation shaderPermutation(subdivisionSurface.m_hasDisplacementMaterial,
@@ -871,17 +888,6 @@ void ClusterAccelBuilder::ComputeInstanceClusterTiling(uint32_t instanceIndex,
         m_tessellatorConfig.tessMode,
         m_tessellatorConfig.visMode,
         ShaderPermutationSurfaceType::PureBSpline);
-
-    if (!m_computeClusterTilingBindlessBL)
-    {
-        nvrhi::BindlessLayoutDesc bindlessLayoutDesc;
-        bindlessLayoutDesc.visibility = nvrhi::ShaderType::All;
-        bindlessLayoutDesc.firstSlot = 0;
-        bindlessLayoutDesc.maxCapacity = 1024;
-        bindlessLayoutDesc.registerSpaces = {
-            nvrhi::BindingLayoutItem::Texture_SRV(2) };
-        m_computeClusterTilingBindlessBL = m_device->createBindlessLayout(bindlessLayoutDesc);
-    }
 
     auto GetComputeClusterTilingPSO = [this](const ComputeClusterTilingPermutation& shaderPermutation)
         {
@@ -901,7 +907,7 @@ void ClusterAccelBuilder::ComputeInstanceClusterTiling(uint32_t instanceIndex,
                     .setComputeShader(shader)
                     .addBindingLayout(m_computeClusterTilingBL)
                     .addBindingLayout(m_computeClusterTilingHizBL)
-                    .addBindingLayout(m_computeClusterTilingBindlessBL);
+                    .addBindingLayout(m_bindlessBL);
 
                 m_computeClusterTilingPSOs[shaderPermutation.index()] = m_device->createComputePipeline(computePipelineDesc);
             }
@@ -963,8 +969,31 @@ void ClusterAccelBuilder::ComputeInstanceClusterTiling(uint32_t instanceIndex,
 
     if (m_tessellatorConfig.hasValidDebugIndex())
     {
-        donut::log::info("Cluster Tiling Debug");
+        donut::log::info("Cluster Tiling Debug Instance:%d Mesh:%s", instanceIndex, donutMeshInfo->name.c_str());
         m_debugBuffer.Log(commandList, ShaderDebugElement::OutputLambda, { .wrap = false, .header = false, .elementIndex = false, .startIndex = 1 });
+    }
+
+    if (m_tessellatorConfig.enableLogging)
+    {
+        donut::log::info("Vertex PatchPoints:%d Mesh:%s", instanceIndex, donutMeshInfo->name.c_str());
+        {
+            auto readBackDesc = GetReadbackDesc(subdivisionSurface.m_vertexDeviceData.patchPoints->getDesc());
+            auto readbackBuffer = commandList->getDevice()->createBuffer(readBackDesc);
+
+            std::vector<float3> patchPoints;
+            DownloadBuffer<float3>(subdivisionSurface.m_vertexDeviceData.patchPoints, patchPoints, readbackBuffer, false, commandList);
+            vectorlog::Log(patchPoints);
+        }
+
+        donut::log::info("Texcoord PatchPoints:%d Mesh:%s", instanceIndex, donutMeshInfo->name.c_str());
+        {
+            auto readBackDesc = GetReadbackDesc(subdivisionSurface.m_texcoordDeviceData.patchPoints->getDesc());
+            auto readbackBuffer = commandList->getDevice()->createBuffer(readBackDesc);
+
+            std::vector<float2> patchPoints;
+            DownloadBuffer<float2>(subdivisionSurface.m_texcoordDeviceData.patchPoints, patchPoints, readbackBuffer, false, commandList);
+            vectorlog::Log(patchPoints);
+        }
     }
 }
 
@@ -1083,11 +1112,16 @@ void ClusterAccelBuilder::UpdateMemoryAllocations(ClusterAccels& accels, uint32_
 
     if (numInstancesChanged)
     {
+        if (m_copyClusterOffsetParamsBuffer)
+            m_copyClusterOffsetParamsBuffer->Release();
         m_clusterOffsetCountsBuffer.Release();
         m_fillClustersDispatchIndirectBuffer.Release();
         m_blasFromClasIndirectArgsBuffer.Release();
         accels.blasPtrsBuffer.Release();
         accels.blasSizesBuffer.Release();
+
+        m_copyClusterOffsetParamsBuffer = m_device->createBuffer(nvrhi::utils::CreateVolatileConstantBufferDesc(
+            sizeof(CopyClusterOffsetParams), "CopyClusterOffsetParams", m_numInstances * ClusterDispatchType::NumTypes * kFrameCount));
 
         m_clusterOffsetCountsBuffer.Create(m_numInstances * ClusterDispatchType::NumTypes, "ClusterOffsets", m_device);
         nvrhi::BufferDesc dispatchIndirectDesc =
@@ -1206,7 +1240,7 @@ void ClusterAccelBuilder::BuildAccel(const RTXMGScene& scene, const TessellatorC
     
     nvrhi::utils::ScopedMarker marker(commandList, "ClusterAccelBuilder::BuildAccel");
 
-    uint32_t tessCounterIndex = (m_buildAccelFrameIndex % kTessBufferFrameCount);
+    uint32_t tessCounterIndex = (m_buildAccelFrameIndex % kFrameCount);
     nvrhi::BufferRange tessCounterRange = { m_tessellationCountersBuffer.GetElementBytes() * tessCounterIndex, m_tessellationCountersBuffer.GetElementBytes() };
 
     // Clear tessellation counters for this frame
@@ -1225,14 +1259,9 @@ void ClusterAccelBuilder::BuildAccel(const RTXMGScene& scene, const TessellatorC
             const auto& inst = instances[i];
             const auto& subd = *subdMeshes[inst.meshID];
 
-            assert(inst.meshInstance.get());
-            const auto& donutMeshInfo = inst.meshInstance->GetMesh();
-            assert(donutMeshInfo.get());
-            uint32_t firstGeometryIndex = donutMeshInfo->geometries[0]->globalGeometryIndex;
             uint32_t surfaceCount{ subd.SurfaceCount() };
 
-            ComputeInstanceClusterTiling(i, subd, accels, firstGeometryIndex, scene.GetGeometryBuffer(), scene.GetMaterialBuffer(), scene.GetDisplacementSampler(),
-                inst.localToWorld, surfaceOffset, surfaceCount, tessCounterRange, commandList);
+            ComputeInstanceClusterTiling(accels, scene, i, surfaceOffset, surfaceCount, tessCounterRange, commandList);
 
             surfaceOffset += surfaceCount;
         }
@@ -1261,7 +1290,13 @@ void ClusterAccelBuilder::BuildAccel(const RTXMGScene& scene, const TessellatorC
 
         m_fillClustersDispatchIndirectBuffer.Log(commandList);
         m_clusterOffsetCountsBuffer.Log(commandList);
-
+        
+        m_gridSamplersBuffer.Log(commandList, [](std::ostream& ss, const GridSampler& e)
+            {
+                ss << "{" << e.edgeSegments.x << ", " << e.edgeSegments.y << ", " << e.edgeSegments.z << ", " << e.edgeSegments.w;
+                return true;
+            });
+        
         m_clustersBuffer.Log(commandList, [](std::ostream& ss, const Cluster& e)
         {
               ss << "{surface:" << e.iSurface << ", vertexOffset:" << e.nVertexOffset
@@ -1305,7 +1340,7 @@ void ClusterAccelBuilder::BuildAccel(const RTXMGScene& scene, const TessellatorC
     
     // Async read of counters
     auto counterBufferData = m_tessellationCountersBuffer.Download(commandList, true);
-    TessellationCounters counters = counterBufferData[(tessCounterIndex + 1) % kTessBufferFrameCount];
+    TessellationCounters counters = counterBufferData[(tessCounterIndex + 1) % kFrameCount];
 
     // Record the desired required memory instead of the max
     stats.desired.m_numTriangles = counters.desiredTriangles;

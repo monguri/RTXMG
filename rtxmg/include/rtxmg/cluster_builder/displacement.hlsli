@@ -44,7 +44,7 @@ LimitFrame DoDisplacement(TexcoordEvaluatorHLSL texcoordEval,
     LimitFrame limit,
     uint32_t iSurface,
     float2 uv,
-    Texture2D displacementTex,
+    Texture2D<float> displacementTex,
     SamplerState dispSampler,
     float scale)
 {
@@ -61,14 +61,14 @@ LimitFrame DoDisplacement(TexcoordEvaluatorHLSL texcoordEval,
     float2 dimensions;
     displacementTex.GetDimensions(dimensions.x, dimensions.y);
     float2 dsdt = 1.0f / dimensions;
-    float displacement = scale * displacementTex.SampleLevel(dispSampler, texcoord.uv, 0).r;
+    float displacement = scale * displacementTex.SampleLevel(dispSampler, texcoord.uv, 0);
     
     // compute derivatives of displacement map, (dD/du) and (dD/dv) from finite differences:
     float2 texcoordDu         = texcoord.uv + dsdt.x * texcoord.deriv1;
     float2 texcoordDv         = texcoord.uv + dsdt.y * texcoord.deriv2;
     
-    float displacement1 = scale * displacementTex.SampleLevel(dispSampler, texcoordDu, 0).r;
-    float displacement2 = scale * displacementTex.SampleLevel(dispSampler, texcoordDv, 0).r;
+    float displacement1 = scale * displacementTex.SampleLevel(dispSampler, texcoordDu, 0);
+    float displacement2 = scale * displacementTex.SampleLevel(dispSampler, texcoordDv, 0);
     float  displacementDeriv1 = ( displacement1 - displacement ) / dsdt.x;
     float  displacementDeriv2 = ( displacement2 - displacement ) / dsdt.y;
     // compute displaced parital derivates

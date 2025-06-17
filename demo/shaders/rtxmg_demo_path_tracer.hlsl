@@ -43,14 +43,35 @@
 #include "gbuffer.h"
 #include "brdf.hlsli"
 #include "utils.hlsli"
+#include "envmap/shaders/envmap.hlsli"
 
+#if defined(TARGET_D3D12)
 #define CONCAT(a,b) a##b
 #define CONCAT_UAV(x) CONCAT(u,x)
 #define NV_SHADER_EXTN_SLOT CONCAT_UAV(RTXMG_NVAPI_SHADER_EXT_SLOT)
 #define NV_SHADER_EXTN_REGISTER_SPACE space0
 #include "nvHLSLExtns.h"
 
-#include "envmap/shaders/envmap.hlsli"
+uint32_t GetClusterID()
+{
+    return NvRtGetClusterID();
+}
+
+#elif defined(TARGET_VULKAN)
+
+// Note that `vk::RayTracingPipelineClusterAccelerationStructureCreateInfoNV::allowClusterAccelerationStructures` must
+// be set to `true` to make this valid.
+[[vk::ext_extension("SPV_NV_cluster_acceleration_structure")]]
+[[vk::ext_capability(5437)]]
+[[vk::ext_builtin_input(5436)]]
+static int const g_ClusterIDNV_;
+
+uint32_t GetClusterID()
+{
+    return (uint32_t)g_ClusterIDNV_;
+}
+
+#endif
 
 ConstantBuffer<LightingConstants> g_Const : register(b0);
 ConstantBuffer<RenderParams> g_RenderParams : register(b1);
@@ -58,12 +79,13 @@ ConstantBuffer<RenderParams> g_RenderParams : register(b1);
 RWTexture2D<float4> u_Accum     : register(u0);
 
 // GBuffer
-RWTexture2D<DepthFormat>    u_Depth         : register(u1);
-RWTexture2D<NormalFormat>   u_Normal        : register(u2);
-RWTexture2D<AlbedoFormat>   u_Albedo        : register(u3);
-RWTexture2D<SpecularFormat> u_Specular      : register(u4);
-RWTexture2D<SpecularHitTFormat> u_SpecularHitT  : register(u5);
-RWTexture2D<RoughnessFormat>    u_Roughness     : register(u6);
+VK_IMAGE_FORMAT_UNKNOWN RWTexture2D<DepthFormat>    u_Depth         : register(u1);
+VK_IMAGE_FORMAT_UNKNOWN RWTexture2D<NormalFormat>   u_Normal        : register(u2);
+VK_IMAGE_FORMAT_UNKNOWN RWTexture2D<AlbedoFormat>   u_Albedo        : register(u3);
+VK_IMAGE_FORMAT_UNKNOWN RWTexture2D<SpecularFormat> u_Specular      : register(u4);
+VK_IMAGE_FORMAT_UNKNOWN RWTexture2D<SpecularHitTFormat> u_SpecularHitT  : register(u5);
+VK_IMAGE_FORMAT_UNKNOWN RWTexture2D<RoughnessFormat>    u_Roughness     : register(u6);
+
 RWStructuredBuffer<HitResult>   u_HitResult     : register(u7);
 
 #if ENABLE_DUMP_FLOAT
@@ -77,8 +99,9 @@ RWTexture2D<float4> u_DebugTex4 : register(u11);
 RWStructuredBuffer<ShaderDebugElement> u_PixelDebug : register(u12);
 #endif
 
+#ifndef TARGET_VULKAN
 RWBuffer<uint32_t>  u_TimeviewBuffer : register(u13);
-
+#endif
 
 RaytracingAccelerationStructure SceneBVH : register(t0);
 StructuredBuffer<InstanceData> t_InstanceData : register(t1);
@@ -95,9 +118,6 @@ StructuredBuffer<SubdInstance> t_SubdInstances : register(t11);
 
 SamplerState s_MaterialSampler : register(s0);
 
-VK_BINDING(0, 1) ByteAddressBuffer t_BindlessBuffers[] : register(t0, space1);
-VK_BINDING(1, 1) Texture2D t_BindlessTextures[] : register(t0, space2);
-
 #include "self_intersection_avoidance.hlsli"
 
 // Cluster look up
@@ -109,7 +129,7 @@ uint16_t2 ClusterGetEdgeSize(uint32_t clusterId)
 
 uint3 ClusterGetVertexIndices(uint32_t primId)
 {
-    const uint32_t      clusterId = NvRtGetClusterID();
+    const uint32_t      clusterId = GetClusterID();
     const uint16_t      triID = (uint16_t)primId;
 
     // vertex quad ordering: 
@@ -296,7 +316,7 @@ GetGeometryFromHit(RayPayload payload)
 
     // Look up cluster geometry data
 
-    uint32_t clusterId = NvRtGetClusterID();
+    uint32_t clusterId = GetClusterID();
     gs.clusterId = clusterId;
     ClusterShadingData clusterShadingData = t_ClusterShadingData[clusterId];
 
@@ -368,7 +388,7 @@ MaterialSample RTXMG_EvaluateSceneMaterial(GeometrySample gs, float3 geometryNor
     }
     else if (colorMode == ColorMode::COLOR_BY_TOPOLOGY)
     {
-        uint32_t clusterId = NvRtGetClusterID();
+        uint32_t clusterId = GetClusterID();
         uint32_t surfaceId = t_ClusterShadingData[clusterId].m_surfaceId;
 
         SubdInstance subdInstance = t_SubdInstances[InstanceID()];
@@ -392,7 +412,7 @@ MaterialSample RTXMG_EvaluateSceneMaterial(GeometrySample gs, float3 geometryNor
     }
     else if (colorMode == ColorMode::COLOR_BY_GEOMETRY_INDEX)
     {
-        float3 hashedColor = UintToColor(gs.material.materialID);
+        float3 hashedColor = UintToColor(gs.geometryIndex);
         result.baseColor = hashedColor;
         result.diffuseAlbedo = hashedColor;
     }
@@ -527,7 +547,7 @@ SampleGeometryMaterial(GeometrySample gs,
     if ((gs.material.baseOrDiffuseTextureIndex >= 0) &&
         (gs.material.flags & MaterialFlags_UseBaseOrDiffuseTexture) != 0)
     {
-        Texture2D diffuseTexture = t_BindlessTextures[NonUniformResourceIndex(
+        Texture2D<float4> diffuseTexture = ResourceDescriptorHeap[NonUniformResourceIndex(
             gs.material.baseOrDiffuseTextureIndex)];
 
         if (mipLevel >= 0)
@@ -543,7 +563,7 @@ SampleGeometryMaterial(GeometrySample gs,
     if ((gs.material.metalRoughOrSpecularTextureIndex >= 0) &&
         (gs.material.flags & MaterialFlags_UseMetalRoughOrSpecularTexture) != 0)
     {
-        Texture2D specularTexture = t_BindlessTextures[NonUniformResourceIndex(
+        Texture2D<float4> specularTexture = ResourceDescriptorHeap[NonUniformResourceIndex(
             gs.material.metalRoughOrSpecularTextureIndex)];
 
         if (mipLevel >= 0)
@@ -557,7 +577,7 @@ SampleGeometryMaterial(GeometrySample gs,
     if ((gs.material.emissiveTextureIndex >= 0) &&
         (gs.material.flags & MaterialFlags_UseEmissiveTexture) != 0)
     {
-        Texture2D emissiveTexture = t_BindlessTextures[NonUniformResourceIndex(
+        Texture2D<float4> emissiveTexture = ResourceDescriptorHeap[NonUniformResourceIndex(
             gs.material.emissiveTextureIndex)];
 
         if (mipLevel >= 0)
@@ -570,7 +590,7 @@ SampleGeometryMaterial(GeometrySample gs,
     if ((gs.material.occlusionTextureIndex >= 0) &&
         (gs.material.flags & MaterialFlags_UseOcclusionTexture) != 0)
     {
-        Texture2D occlusionTexture = t_BindlessTextures[NonUniformResourceIndex(
+        Texture2D<float4> occlusionTexture = ResourceDescriptorHeap[NonUniformResourceIndex(
             gs.material.occlusionTextureIndex)];
 
         if (mipLevel >= 0)
@@ -762,9 +782,9 @@ struct Attributes
             // Clear gbuffer
             // using linear depth
             u_Depth[dispatchPixel] = g_RenderParams.zFar;
-            u_Normal[dispatchPixel] = float3(0.0f, 0.0f, 0.0f);
-            u_Albedo[dispatchPixel] = float3(0.0f, 0.0f, 0.0f);
-            u_Specular[dispatchPixel] = float3(0.0f, 0.0f, 0.0f);
+            u_Normal[dispatchPixel] = float4(0.0f, 0.0f, 0.0f, 0.0f);
+            u_Albedo[dispatchPixel] = float4(0.0f, 0.0f, 0.0f, 0.0f);
+            u_Specular[dispatchPixel] = float4(0.0f, 0.0f, 0.0f, 0.0f);
             u_Roughness[dispatchPixel] = 0.0f;
         }
 
@@ -829,7 +849,7 @@ float3 SampleDirect(MaterialSample material, float3 p, float3 gN, float3 N, floa
     payload.barycentrics = attrib.uv;
     payload.hitT = RayTCurrent();
 
-    SHADER_DEBUG(uint4(payload.instanceID, payload.primitiveIndex, payload.geometryIndex, NvRtGetClusterID()));
+    SHADER_DEBUG(uint4(payload.instanceID, payload.primitiveIndex, payload.geometryIndex, GetClusterID()));
     SHADER_DEBUG(float3(payload.barycentrics, payload.hitT));
 
     IntersectionRecord ir = GetIntersectionRecord(payload);
@@ -857,13 +877,13 @@ float3 SampleDirect(MaterialSample material, float3 p, float3 gN, float3 N, floa
 
             float depth = dot(normalize(g_RenderParams.W), ir.p - g_RenderParams.eye);
             u_Depth[dispatchPixel] = depth;
-            u_Normal[dispatchPixel] = ir.n;
+            u_Normal[dispatchPixel] = float4(ir.n, 0.f);
 
             float3 V = -WorldRayDirection();
             FresnelBlend brdf = MakeFresnelBlend(ir.ms.baseColor, ir.ms.specularF0, ir.ms.metalness, ir.ms.roughness);
-            u_Albedo[dispatchPixel] = brdf.m_diffuse.m_albedo * wfWeight;
+            u_Albedo[dispatchPixel] = float4(brdf.m_diffuse.m_albedo * wfWeight, 1.0f);
             float3 spec = BRDFEnvApprox(brdf, ir.n, V);
-            u_Specular[dispatchPixel] = spec * wfWeight;
+            u_Specular[dispatchPixel] = float4(spec * wfWeight, 1.0f);
             u_Roughness[dispatchPixel] = ir.ms.roughness;
         }
 
@@ -1055,7 +1075,9 @@ uint TimeDiff(uint startTime, uint endTime)
 {
     SHADER_DEBUG_INIT(u_PixelDebug, g_RenderParams.debugPixel, DispatchRaysIndex().xy);
 
+#if defined(TARGET_D3D12)
     uint startTime = NvGetSpecial(NV_SPECIALOP_GLOBAL_TIMER_LO);
+#endif
     DUMP_FLOAT4(1, float4(0, 0, 0, 1)); // Clear debug buffer
     DUMP_FLOAT4(2, float4(0, 0, 0, 1)); // Clear debug buffer
     DUMP_FLOAT4(3, float4(0, 0, 0, 1)); // Clear debug buffer
@@ -1142,6 +1164,7 @@ uint TimeDiff(uint startTime, uint endTime)
         accumVal = lerp(accumVal, float4(result, 1.f), 1.f / float(g_RenderParams.subFrameIndex + 1));
     }
 
+#if defined(TARGET_D3D12)
     if (g_RenderParams.enableTimeView)
     {
         uint endTime = NvGetSpecial(NV_SPECIALOP_GLOBAL_TIMER_LO);
@@ -1171,6 +1194,7 @@ uint TimeDiff(uint startTime, uint endTime)
             accumVal = lerp(accumVal, float4(result, 1.f), 1.f / float(g_RenderParams.subFrameIndex - 1));
         }
     }
+#endif
 
     u_Accum[pixelPosition] = accumVal;
 }

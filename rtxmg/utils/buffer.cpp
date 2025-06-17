@@ -66,10 +66,10 @@ void DownloadBuffer(nvrhi::IBuffer* src, void* dest, nvrhi::IBuffer* staging, bo
         memcpy(dest, mappedBuffer, numBytes);
     else
         memset(dest, 0, numBytes);
+    commandList->getDevice()->unmapBuffer(staging);
 
     if (!async)
     {
-        commandList->getDevice()->unmapBuffer(staging);
         commandList->open();
     }
 }

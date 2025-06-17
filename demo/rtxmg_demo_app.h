@@ -164,7 +164,7 @@ public:
     void Render(nvrhi::IFramebuffer* framebuffer) override;
 
 public:
-    RTXMGDemoApp(donut::app::DeviceManager* deviceManager, int argc,
+    RTXMGDemoApp(donut::app::DeviceManager* deviceManager, std::string &windowTitle, int argc,
         const char** argv);
     virtual ~RTXMGDemoApp();
 

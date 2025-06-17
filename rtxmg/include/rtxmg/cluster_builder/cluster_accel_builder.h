@@ -222,16 +222,11 @@ protected:
     // Calculates the cluster layout based off of various visibility metrics
     // A cluster tiling is the number of clusters and cluster sizes that are used to cover a surface.
     // Outputs cluster headers, shading data, and addresses
-    void ComputeInstanceClusterTiling(uint32_t instanceIndex,
-        const SubdivisionSurface& subdivisionSurface,
-        ClusterAccels& accels,
-        uint32_t firstGeometryIndex,
-        nvrhi::IBuffer* geometryBuffer,
-        nvrhi::IBuffer* materialBuffer,
-        nvrhi::ISampler* displacementSampler,
-        const donut::math::affine3& localToWorld,
+    void ComputeInstanceClusterTiling(ClusterAccels& accels,
+        const RTXMGScene& scene,
+        uint32_t instanceIndex,
         uint32_t surfaceOffset,
-        uint32_t surfaceCount, 
+        uint32_t surfaceCount,
         const nvrhi::BufferRange& tessCounterRange,
         nvrhi::ICommandList* commandList);
     void CopyClusterOffset(uint32_t instanceIndex, ClusterDispatchType dispatchType,
@@ -249,6 +244,8 @@ protected:
     uint32_t m_buildAccelFrameIndex = 0; // substition for frameIndex since we don't necessarily build every frame
 
     // Pipeline descs
+    nvrhi::BindingLayoutHandle m_bindlessBL;
+
     nvrhi::BindingLayoutHandle m_fillInstantiateTemplateBL;
     nvrhi::ComputePipelineHandle m_fillInstantiateTemplatePSO;
 
@@ -259,13 +256,11 @@ protected:
     nvrhi::ComputePipelineHandle m_copyClusterOffsetPSO;
 
     nvrhi::BindingLayoutHandle m_fillClustersBL;
-    nvrhi::BindingLayoutHandle m_fillClustersBindlessBL;
     nvrhi::ComputePipelineHandle m_fillClustersPSOs[FillClustersPermutation::kCount];
     nvrhi::ComputePipelineHandle m_fillClustersTexcoordsPSO;
 
     nvrhi::BindingLayoutHandle m_computeClusterTilingBL;
     nvrhi::BindingLayoutHandle m_computeClusterTilingHizBL;
-    nvrhi::BindingLayoutHandle m_computeClusterTilingBindlessBL;
     nvrhi::ComputePipelineHandle m_computeClusterTilingPSOs[ComputeClusterTilingPermutation::kCount];
     
     RTXMGBuffer<uint3> m_fillClustersDispatchIndirectBuffer; // number of thread groups per each instance

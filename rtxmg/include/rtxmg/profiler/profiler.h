@@ -94,7 +94,7 @@ class Profiler
     static Profiler& Get();
 
     // force the immediate release all device resources
-    void Terminate();
+    static void Terminate();
 
     // frequency < 0 : profile every frame (benchmark mode)
     // frequency == 0 : disable profiling

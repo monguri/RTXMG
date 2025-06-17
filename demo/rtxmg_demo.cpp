@@ -41,35 +41,39 @@ extern "C" {
 
 using namespace donut;
 
-const char* UIData::WindowTitle = "RTX Mega Geometry (" RTXMG_VERSION ")";
-
 int main(int argc, const char** argv)
 {
     donut::log::ConsoleApplicationMode();
     donut::log::EnableOutputToMessageBox(true);
 
     nvrhi::GraphicsAPI api = app::GetGraphicsAPIFromCommandLine(argc, argv);
-    if (api != nvrhi::GraphicsAPI::D3D12)
+    if (api != nvrhi::GraphicsAPI::D3D12 && api != nvrhi::GraphicsAPI::VULKAN)
     {
-        donut::log::fatal("This demo requires D3D12");
+        donut::log::fatal("This demo requires D3D12 or Vulkan");
     }
 
     app::DeviceManager* deviceManager = app::DeviceManager::Create(api);
 
+    std::string title = "RTX Mega Geometry " RTXMG_VERSION + std::string(api == nvrhi::GraphicsAPI::D3D12 ? " (D3D12)" : " (VULKAN)");
+
     try 
     {
-        RTXMGDemoApp app(deviceManager, argc, argv);
-        UserInterface gui(app);
-        if (app.Init() && gui.CustomInit(app.GetRenderer().GetShaderFactory()))
         {
-            deviceManager->AddRenderPassToBack(&app);
-            deviceManager->AddRenderPassToBack(&gui);
-            deviceManager->RunMessageLoop();
-            deviceManager->RemoveRenderPass(&gui);
-            deviceManager->RemoveRenderPass(&app);
-        }
-        deviceManager->Shutdown();
+            RTXMGDemoApp app(deviceManager, title, argc, argv);
+            UserInterface gui(app);
+            if (app.Init() && gui.CustomInit(app.GetRenderer().GetShaderFactory()))
+            {
+                deviceManager->AddRenderPassToBack(&app);
+                deviceManager->AddRenderPassToBack(&gui);
+                deviceManager->RunMessageLoop();
+                deviceManager->RemoveRenderPass(&gui);
+                deviceManager->RemoveRenderPass(&app);
+            }
 
+            Profiler::Terminate();
+        }
+        
+        deviceManager->Shutdown();
         delete deviceManager;
     }
     catch (const std::exception& e)

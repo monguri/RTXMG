@@ -85,15 +85,18 @@ void StopwatchGPU::ProcessUnresolvedQueries()
 
     // New frame started
     // Check our previous queries
-    for (; m_unresolvedQueryIndex != m_queryIndex;
-        m_unresolvedQueryIndex = (m_unresolvedQueryIndex + 1) % kMaxInFlightQueries)
+    uint32_t unresolvedQueryIndex = m_unresolvedQueryIndex;
+    while(unresolvedQueryIndex != m_queryIndex)
     {
-        if (m_device->pollTimerQuery(m_timerQueries[m_unresolvedQueryIndex]))
+        unresolvedQueryIndex = (unresolvedQueryIndex + 1) % kMaxInFlightQueries;
+        if (!m_device->pollTimerQuery(m_timerQueries[unresolvedQueryIndex]))
         {
-            // save the last one
-            m_lastDuration = m_device->getTimerQueryTime(m_timerQueries[m_unresolvedQueryIndex]);
-            m_hasLastDuration = true;
+            break;
         }
+        // save the last one
+        m_unresolvedQueryIndex = unresolvedQueryIndex;
+        m_lastDuration = m_device->getTimerQueryTime(m_timerQueries[m_unresolvedQueryIndex]);
+        m_hasLastDuration = true;
         m_device->resetTimerQuery(m_timerQueries[m_unresolvedQueryIndex]);
     }
 }
@@ -107,8 +110,8 @@ void StopwatchGPU::Start(nvrhi::ICommandList* commandList)
         {
             query = m_device->createTimerQuery();
         }
-        m_queryIndex = 0;
-        m_unresolvedQueryIndex = 0;
+        m_queryIndex = -1;
+        m_unresolvedQueryIndex = -1;
         m_hasLastDuration = false;
         state = State::reset;
     }
