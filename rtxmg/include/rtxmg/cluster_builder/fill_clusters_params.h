@@ -33,8 +33,10 @@
 #include "rtxmg/subdivision/osd_ports/tmr/types.h"
 
 // Number of clusters to calculate vertices for in a thread group
-// Over 1 appears to lead to contention
 static const uint32_t kFillClustersVerticesWaves = 4;
+
+// Number of lanes (threads) per wave for vertex cluster filling
+static const uint32_t kFillClustersVerticesLanes = 32;
 
 // We do cluster per x, y is the cluster UV evaluation points
 static const uint32_t kFillClustersTexcoordsThreadsX = 32;

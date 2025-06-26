@@ -697,11 +697,11 @@ void WriteSurfaceWave(uint32_t iWave, uint32_t iLane, uint32_t iSurface, GridSam
     }
 }
 
-[numthreads(kComputeClusterTilingLanes, kComputeClusterTilingWaves, 1)]
+[numthreads(kComputeClusterTilingLanes * kComputeClusterTilingWaves, 1, 1)]
 void main(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
 {  
-    const uint32_t iLane = threadIdx.x;
-    const uint32_t iWave = threadIdx.y;
+    const uint32_t iLane = threadIdx.x % kComputeClusterTilingLanes;
+    const uint32_t iWave = threadIdx.x / kComputeClusterTilingLanes;
     const uint32_t iSurface = kComputeClusterTilingWaves * groupIdx.x + iWave + g_Params.surfaceStart;
 
     SHADER_DEBUG_INIT(u_Debug, uint2(g_Params.debugSurfaceIndex, g_Params.debugLaneIndex), uint2(iSurface, iLane));

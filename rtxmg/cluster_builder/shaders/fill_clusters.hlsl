@@ -96,11 +96,11 @@ void GathererWriteTexcoord(TexCoordLimitFrame texcoord, uint32_t clusterIndex, u
     u_ClusterShadingData[clusterIndex].m_texcoords[cornerIndex] = texcoord.uv;
 }
 
-[numthreads(32, kFillClustersVerticesWaves, 1)]
+[numthreads(kFillClustersVerticesLanes * kFillClustersVerticesWaves, 1, 1)]
 void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
 {
-    uint32_t iLane = threadIdx.x;
-    uint32_t iWave = threadIdx.y;
+    uint32_t iLane = threadIdx.x % kFillClustersVerticesLanes;
+    uint32_t iWave = threadIdx.x / kFillClustersVerticesLanes;
     const uint32_t groupClusterIndex = groupIdx.x * kFillClustersVerticesWaves + iWave;
 
 #if SURFACE_TYPE == SURFACE_TYPE_ALL
@@ -164,7 +164,7 @@ void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_Gr
 
     {
         // wave wide loop
-        for (uint16_t pointIndex = (uint16_t)iLane; pointIndex < rCluster.VerticesPerCluster(); pointIndex += 32)
+        for (uint16_t pointIndex = (uint16_t)iLane; pointIndex < rCluster.VerticesPerCluster(); pointIndex += kFillClustersVerticesLanes)
         {
             float2 uv = rSampler.UV(rCluster.Linear2Idx2D(pointIndex) + rCluster.offset, (ClusterPattern)g_TessParams.clusterPattern);
 
@@ -199,10 +199,12 @@ void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_Gr
     }
 }
 
-[numthreads(kFillClustersTexcoordsThreadsX, 4, 1)]
+[numthreads(kFillClustersTexcoordsThreadsX * 4, 1, 1)]
 void FillClustersTexcoordsMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
 {
-    const uint32_t groupClusterIndex = groupIdx.x * kFillClustersTexcoordsThreadsX + threadIdx.x;
+    const uint32_t clusterThreadIdx = threadIdx.x % kFillClustersTexcoordsThreadsX;
+    const uint32_t cornerIdx = threadIdx.x / kFillClustersTexcoordsThreadsX;
+    const uint32_t groupClusterIndex = groupIdx.x * kFillClustersTexcoordsThreadsX + clusterThreadIdx;
     uint2 offsetCount = t_ClusterOffsetCounts[g_TessParams.instanceIndex * ClusterDispatchType::NumTypes + ClusterDispatchType::All];
     if (groupClusterIndex >= offsetCount.y)
         return; // early out waves beyond cluster array end
@@ -227,7 +229,7 @@ void FillClustersTexcoordsMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupId
     texcoordEval.m_texcoordPatchPoints = t_TexCoordPatchPoints;
     texcoordEval.m_texcoordControlPoints = t_TexCoords;
 
-    TexCoordLimitFrame texcoord = texcoordEval.EvaluateLinearSubd(kSurfaceUVs[threadIdx.y], iSurface);
+    TexCoordLimitFrame texcoord = texcoordEval.EvaluateLinearSubd(kSurfaceUVs[cornerIdx], iSurface);
 
-    GathererWriteTexcoord(texcoord, clusterIndex, threadIdx.y);
+    GathererWriteTexcoord(texcoord, clusterIndex, cornerIdx);
 }
