@@ -303,6 +303,8 @@ bool RTXMGDemoApp::Init()
     app::AdapterInfo::UUID uuid = {};
 
     const app::AdapterInfo* pAdapter = nullptr;
+
+#if DONUT_WITH_DX12
     if (GetDevice()->getGraphicsAPI() == nvrhi::GraphicsAPI::D3D12)
     {
         ID3D12Device* rawDevice = (ID3D12Device*)GetDevice()->getNativeObject(nvrhi::ObjectTypes::D3D12_Device);
@@ -319,7 +321,9 @@ bool RTXMGDemoApp::Init()
             }
         }
     }
-    else if (GetDevice()->getGraphicsAPI() == nvrhi::GraphicsAPI::VULKAN)
+#endif
+#if DONUT_WITH_VULKAN
+    if (GetDevice()->getGraphicsAPI() == nvrhi::GraphicsAPI::VULKAN)
     {
         vk::PhysicalDevice rawDevice = (VkPhysicalDevice)GetDevice()->getNativeObject(nvrhi::ObjectTypes::VK_PhysicalDevice).pointer;
         vk::PhysicalDeviceProperties2 properties2;
@@ -340,6 +344,7 @@ bool RTXMGDemoApp::Init()
             }
         }
     }
+#endif
     
     if (!pAdapter)
     {
