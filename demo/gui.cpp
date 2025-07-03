@@ -715,7 +715,8 @@ void UserInterface::BuildUIMain(int2 screenLayoutSize)
         bool shouldHighlight = (t < 0.5f);
 
         bool highlightMaxClusters = shouldHighlight && stats.desired.m_numClusters > stats.allocated.m_numClusters;
-        bool highlightVertexMemory = shouldHighlight && stats.desired.m_vertexBufferSize > stats.allocated.m_vertexBufferSize;
+        bool highlightVertexMemory = shouldHighlight && (stats.desired.m_vertexBufferSize > stats.allocated.m_vertexBufferSize || 
+            stats.desired.m_vertexNormalsBufferSize > stats.allocated.m_vertexNormalsBufferSize);
         bool highlightClasMemory = shouldHighlight && stats.desired.m_clasSize > stats.allocated.m_clasSize;
 
         const ImVec4 kHighlightColor = ImVec4(0.5f, 0.0f, 0.0f, 1.0f); // Red highlight
@@ -739,7 +740,7 @@ void UserInterface::BuildUIMain(int2 screenLayoutSize)
             memSettingsChanged = true;
         }
         if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
-            ImGui::SetTooltip("Max memory in MB allocated for tessellated vertices");
+            ImGui::SetTooltip("Max memory in MB allocated for tessellated vertices (positions + normals when enabled)");
         if (highlightVertexMemory)
             ImGui::PopStyleColor();
 
@@ -873,6 +874,14 @@ void UserInterface::BuildUIMain(int2 screenLayoutSize)
         }
         if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
             ImGui::SetTooltip("Scaling factor for displacement maps");
+
+        bool vertexNormalsEnabled = m_app.GetVertexNormalsEnabled();
+        if (ImGui::Checkbox("Vertex Normals", &vertexNormalsEnabled))
+        {
+            m_app.SetVertexNormalsEnabled(vertexNormalsEnabled);
+        }
+        if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
+            ImGui::SetTooltip("Enable computation of vertex normals from surface derivatives");
     }
     ImGui::PopStyleColor();
 
@@ -1090,8 +1099,9 @@ void UserInterface::BuildMemoryWarning(int2 screenLayoutSize)
     bool clusterCountExceeded = stats.desired.m_numClusters > stats.allocated.m_numClusters;
     bool clasMemoryExceeded = stats.desired.m_clasSize > stats.allocated.m_clasSize;
     bool vertexMemoryExceeded = stats.desired.m_vertexBufferSize > stats.allocated.m_vertexBufferSize;
+    bool vertexNormalsMemoryExceeded = stats.desired.m_vertexNormalsBufferSize > stats.allocated.m_vertexNormalsBufferSize;
 
-    if (!clusterCountExceeded && !clasMemoryExceeded && !vertexMemoryExceeded)
+    if (!clusterCountExceeded && !clasMemoryExceeded && !vertexMemoryExceeded && !vertexNormalsMemoryExceeded)
         return;
 
     ImVec2 overlayPos(screenLayoutSize.x * 0.5f, 10.0f); // Center X, 10px from the top
@@ -1139,6 +1149,15 @@ void UserInterface::BuildMemoryWarning(int2 screenLayoutSize)
         MemoryFormatter(stats.desired.m_vertexBufferSize, bufDesired, sizeof(bufDesired));
         MemoryFormatter(stats.allocated.m_vertexBufferSize, bufAllocated, sizeof(bufDesired));
         ImGui::Text("Vertex Buffer %s / %s", bufDesired, bufAllocated);
+    }
+
+    if (vertexNormalsMemoryExceeded)
+    {
+        char bufDesired[64];
+        char bufAllocated[64];
+        MemoryFormatter(stats.desired.m_vertexNormalsBufferSize, bufDesired, sizeof(bufDesired));
+        MemoryFormatter(stats.allocated.m_vertexNormalsBufferSize, bufAllocated, sizeof(bufDesired));
+        ImGui::Text("Vertex Normals Buffer %s / %s", bufDesired, bufAllocated);
     }
     ImGui::End();
 

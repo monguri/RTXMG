@@ -192,6 +192,7 @@ namespace stats
         Sampler<size_t> blasScratchSize = { .name = "BLAS Scratch", };
         Sampler<size_t> clasSize = { .name = "CLAS size", };
         Sampler<size_t> vertexBufferSize = { .name = "Vertex Buffer", };
+        Sampler<size_t> vertexNormalsBufferSize = { .name = "Vertex Normals Buffer", };
         Sampler<size_t> clusterShadingDataSize = { .name = "Cluster Data Buffer", };
 
         void BuildUI(ImFont* iconicFont, ImPlotContext* plotContext) const;

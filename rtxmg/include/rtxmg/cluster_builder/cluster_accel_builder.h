@@ -169,6 +169,7 @@ public:
     enum BitIndices : uint32_t
     {
         DisplacementMaps = 0,
+        VertexNormals,
         SurfaceTypeStartBit,
         Count = SurfaceTypeStartBit + kSurfaceTypeBitCount
     };
@@ -176,12 +177,15 @@ public:
     uint32_t index() const { return m_bits; }
 
     FillClustersPermutation(bool enableDisplacement,
+        bool enableVertexNormals,
         ShaderPermutationSurfaceType surfaceType)
         : m_bits((enableDisplacement ? (1u << BitIndices::DisplacementMaps) : 0u)
+         | (enableVertexNormals ? (1u << BitIndices::VertexNormals) : 0u)
          | (uint32_t(surfaceType) << BitIndices::SurfaceTypeStartBit))
     {}
 
     bool isDisplacementEnabled() const { return m_bits & (1u << BitIndices::DisplacementMaps); }
+    bool isVertexNormalsEnabled() const { return m_bits & (1u << BitIndices::VertexNormals); }
     ShaderPermutationSurfaceType surfaceType() const
     {
         constexpr uint32_t kBitMask = (1 << kSurfaceTypeBitCount) - 1;

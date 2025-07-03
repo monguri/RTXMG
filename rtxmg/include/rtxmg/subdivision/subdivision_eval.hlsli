@@ -364,6 +364,51 @@ struct SubdivisionEvaluatorHLSL
         }
     }
 #endif
+
+    float3 CalculateLimitFrameNormal(LimitFrame limit)
+    {
+        // Primary method: compute normal from surface derivatives
+        float3 crossProduct = cross(limit.deriv1, limit.deriv2);
+        float crossLength = length(crossProduct);
+        
+        // Check for degenerate cross product (parallel or zero derivatives)
+        const float kEpsilon = 1e-6f;
+        
+        if (crossLength > kEpsilon)
+        {
+            // Use surface derivatives - manual normalization to avoid NaN
+            return crossProduct / crossLength;
+        }
+        else
+        {
+            // Fallback: compute normal from first 3 control points of the patch
+            SurfaceDescriptor desc = GetSurfaceDesc();
+            Index patchPointIndex0 = kPureBSplinePatchPointIndices[0];
+            Index patchPointIndex1 = kPureBSplinePatchPointIndices[1];
+            Index patchPointIndex2 = kPureBSplinePatchPointIndices[2];
+            
+            Index cpi0 = m_vertexControlPointIndices[desc.firstControlPoint + patchPointIndex0];
+            Index cpi1 = m_vertexControlPointIndices[desc.firstControlPoint + patchPointIndex1];
+            Index cpi2 = m_vertexControlPointIndices[desc.firstControlPoint + patchPointIndex2];
+            
+            float3 p0 = m_vertexControlPoints[cpi0];
+            float3 p1 = m_vertexControlPoints[cpi1];
+            float3 p2 = m_vertexControlPoints[cpi2];
+            
+            float3 fallbackCross = cross(p1 - p0, p2 - p0);
+            float fallbackLength = length(fallbackCross);
+            
+            if (fallbackLength > kEpsilon)
+            {
+                return fallbackCross / fallbackLength;
+            }
+            else
+            {
+                // Ultimate fallback: use up vector
+                return float3(0, 0, 1);
+            }
+        }
+    }
 };
 
 struct DynamicSubdivisionEvaluatorHLSL : SubdivisionEvaluatorHLSL

@@ -80,6 +80,9 @@ StructuredBuffer<float2> t_TexCoords : register(t19);
 RWStructuredBuffer<float3> u_ClusterVertexPositions : register(u0);
 RWStructuredBuffer<ClusterShadingData> u_ClusterShadingData : register(u1);
 RWStructuredBuffer<ShaderDebugElement> u_Debug : register(u2);
+#if VERTEX_NORMALS
+RWStructuredBuffer<float3> u_ClusterVertexNormals : register(u3);
+#endif
 
 SamplerState s_DisplacementSampler : register(s0);
 
@@ -90,6 +93,15 @@ void GathererWriteLimit(LimitFrame vertexLimit, Cluster cluster, uint32_t vertex
 {
     u_ClusterVertexPositions[cluster.nVertexOffset + vertexIndex] = quantize(vertexLimit.p, g_TessParams.quantNBits);
 }
+
+#if VERTEX_NORMALS
+void GathererWriteNormal(LimitFrame vertexLimit, Cluster cluster, uint32_t vertexIndex, SubdivisionEvaluatorHLSL subd)
+{
+    // Use the subdivision evaluator's robust normal calculation method
+    float3 normal = subd.CalculateLimitFrameNormal(vertexLimit);
+    u_ClusterVertexNormals[cluster.nVertexOffset + vertexIndex] = normal;
+}
+#endif
 
 void GathererWriteTexcoord(TexCoordLimitFrame texcoord, uint32_t clusterIndex, uint32_t cornerIndex)
 {
@@ -195,6 +207,10 @@ void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_Gr
 #endif
 
             GathererWriteLimit(limit, rCluster, pointIndex);
+
+#if VERTEX_NORMALS
+            GathererWriteNormal(limit, rCluster, pointIndex, subd);
+#endif
         }
     }
 }

@@ -911,6 +911,7 @@ void RTXMGDemoApp::Render(nvrhi::IFramebuffer* framebuffer)
                 .enableBackfaceVisibility = m_args.enableBackfaceVisibility,
                 .enableLogging = m_args.enableAccelBuildLogging,
                 .enableMonolithicClusterBuild = m_ui.enableMonolithicClusterBuild,
+                .enableVertexNormals = m_args.enableVertexNormals,
                 .viewportSize = { (uint32_t)m_renderSize.x, (uint32_t)m_renderSize.y },
                 .edgeSegments = m_args.edgeSegments,
                 .isolationLevel = m_renderParams.isolationLevel,
@@ -981,12 +982,14 @@ void RTXMGDemoApp::Render(nvrhi::IFramebuffer* framebuffer)
         stats::memUsageSamplers.clasSize.PushBack(m_BuildStats.desired.m_clasSize);
         stats::memUsageSamplers.blasScratchSize.PushBack(m_BuildStats.desired.m_blasScratchSize);
         stats::memUsageSamplers.vertexBufferSize.PushBack(m_BuildStats.desired.m_vertexBufferSize);
+        stats::memUsageSamplers.vertexNormalsBufferSize.PushBack(m_BuildStats.desired.m_vertexNormalsBufferSize);
         stats::memUsageSamplers.clusterShadingDataSize.PushBack(m_BuildStats.desired.m_clusterDataSize);
 
         stats::memUsageSamplers.blasSize.max = m_BuildStats.allocated.m_blasSize;
         stats::memUsageSamplers.clasSize.max = m_BuildStats.allocated.m_clasSize;
         stats::memUsageSamplers.blasScratchSize.max = m_BuildStats.allocated.m_blasScratchSize;
         stats::memUsageSamplers.vertexBufferSize.max = m_BuildStats.allocated.m_vertexBufferSize;
+        stats::memUsageSamplers.vertexNormalsBufferSize.max = m_BuildStats.allocated.m_vertexNormalsBufferSize;
         stats::memUsageSamplers.clusterShadingDataSize.max = m_BuildStats.allocated.m_clusterDataSize;
     }
 
@@ -1135,6 +1138,17 @@ void RTXMGDemoApp::SetUpdateTessellationCamera(bool update)
     if (update != m_args.updateTessCamera)
     {
         m_args.updateTessCamera = update;
+        m_accelBuilderNeedsUpdate = true;
+        GetRenderer().ResetSubframes();
+        GetRenderer().ResetDenoiser();
+    }
+}
+
+void RTXMGDemoApp::SetVertexNormalsEnabled(bool enabled)
+{
+    if (enabled != m_args.enableVertexNormals)
+    {
+        m_args.enableVertexNormals = enabled;
         m_accelBuilderNeedsUpdate = true;
         GetRenderer().ResetSubframes();
         GetRenderer().ResetDenoiser();

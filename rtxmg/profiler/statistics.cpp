@@ -484,16 +484,17 @@ namespace stats {
                 };
 
             buildRow("Vertex buffer", vertexBufferSize.latest, vertexBufferSize.max, desiredTris, numPixels, desiredClusters, 0);
+            buildRow("Vertex normals buffer", vertexNormalsBufferSize.latest, vertexNormalsBufferSize.max, desiredTris, numPixels, desiredClusters, 0);
             buildRow("Cluster AS (CLAS)", clasSize.latest, clasSize.max, desiredTris, numPixels, desiredClusters);
             buildRow("Cluster Data buffer", clusterShadingDataSize.latest, clusterShadingDataSize.max, 0, 0, desiredClusters);
             buildRow("Bottom Level AS (BLAS)", blasSize.latest, blasSize.max, 0, 0, allocatedClusters);
             buildRow("BLAS scratch buffer", blasScratchSize.latest, blasScratchSize.max, 0, 0, allocatedClusters);
             
             size_t total = blasSize.latest + blasScratchSize.latest + clasSize.latest + vertexBufferSize.latest
-                + clusterShadingDataSize.latest;
+                + vertexNormalsBufferSize.latest + clusterShadingDataSize.latest;
 
             size_t totalMax = blasSize.max + blasScratchSize.max + clasSize.max + vertexBufferSize.max
-                + clusterShadingDataSize.max;
+                + vertexNormalsBufferSize.max + clusterShadingDataSize.max;
 
             buildRow("Total ", total, totalMax, desiredTris, numPixels, desiredClusters, false);
         }

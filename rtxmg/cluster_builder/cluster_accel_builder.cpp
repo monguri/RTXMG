@@ -685,6 +685,7 @@ void ClusterAccelBuilder::FillInstanceClusters(const RTXMGScene& scene, ClusterA
             .addItem(nvrhi::BindingSetItem::StructuredBuffer_UAV(0, accels.clusterVertexPositionsBuffer)) 
             .addItem(nvrhi::BindingSetItem::StructuredBuffer_UAV(1, accels.clusterShadingDataBuffer))
             .addItem(nvrhi::BindingSetItem::StructuredBuffer_UAV(2, m_debugBuffer))
+            .addItem(nvrhi::BindingSetItem::StructuredBuffer_UAV(3, accels.clusterVertexNormalsBuffer))
             .addItem(nvrhi::BindingSetItem::ConstantBuffer(0, m_fillClustersParamsBuffer));
 
         nvrhi::BindingSetHandle bindingSet;
@@ -699,6 +700,7 @@ void ClusterAccelBuilder::FillInstanceClusters(const RTXMGScene& scene, ClusterA
                 {
                     std::vector<donut::engine::ShaderMacro> fillClustersMacros;
                     fillClustersMacros.push_back(donut::engine::ShaderMacro("DISPLACEMENT_MAPS", shaderPermutation.isDisplacementEnabled() ? "1" : "0"));
+                    fillClustersMacros.push_back(donut::engine::ShaderMacro("VERTEX_NORMALS", shaderPermutation.isVertexNormalsEnabled() ? "1" : "0"));
                     fillClustersMacros.push_back(donut::engine::ShaderMacro("SURFACE_TYPE", toString(shaderPermutation.surfaceType())));
                     nvrhi::ShaderHandle shader = m_shaderFactory.CreateShader("cluster_builder/fill_clusters.hlsl", "FillClustersMain", &fillClustersMacros, nvrhi::ShaderType::Compute);
 
@@ -731,7 +733,7 @@ void ClusterAccelBuilder::FillInstanceClusters(const RTXMGScene& scene, ClusterA
 
         if (m_tessellatorConfig.enableMonolithicClusterBuild)
         {
-            FillClustersPermutation shaderPermutation = { subd.m_hasDisplacementMaterial, ShaderPermutationSurfaceType::All };
+            FillClustersPermutation shaderPermutation = { subd.m_hasDisplacementMaterial, m_tessellatorConfig.enableVertexNormals, ShaderPermutationSurfaceType::All };
             state.setPipeline(GetFillClustersPSO(shaderPermutation));
             commandList->setComputeState(state);
             uint32_t dispatchIndirectArgsOffset = (instanceIndex * ClusterDispatchType::NumTypes + ClusterDispatchType::Limit) * uint32_t(m_fillClustersDispatchIndirectBuffer.GetElementBytes());
@@ -741,7 +743,7 @@ void ClusterAccelBuilder::FillInstanceClusters(const RTXMGScene& scene, ClusterA
         {
             for (uint32_t i = 0; i <= uint32_t(ShaderPermutationSurfaceType::Limit); i++)
             {
-                FillClustersPermutation shaderPermutation = { subd.m_hasDisplacementMaterial, ShaderPermutationSurfaceType(i) };
+                FillClustersPermutation shaderPermutation = { subd.m_hasDisplacementMaterial, m_tessellatorConfig.enableVertexNormals, ShaderPermutationSurfaceType(i) };
                 state.setPipeline(GetFillClustersPSO(shaderPermutation));
                 commandList->setComputeState(state);
                 uint32_t dispatchIndirectArgsOffset = (instanceIndex * ClusterDispatchType::NumTypes + ClusterDispatchType(i)) * uint32_t(m_fillClustersDispatchIndirectBuffer.GetElementBytes());
@@ -1088,6 +1090,7 @@ void ClusterAccelBuilder::UpdateMemoryAllocations(ClusterAccels& accels, uint32_
     maxClusterBlocks = std::max(1ull, maxClusterBlocks);
     size_t maxClasBytes = size_t(cluster::kClasByteAlignment) * maxClusterBlocks;
 
+    // Calculate max vertices based on vertex buffer bytes (same for positions and normals since both are float3)
     uint32_t maxVertices = uint32_t(m_tessellatorConfig.memorySettings.vertexBufferBytes / sizeof(float3));
     maxVertices = std::max(kClusterMaxVertices, maxVertices);
 
@@ -1097,6 +1100,10 @@ void ClusterAccelBuilder::UpdateMemoryAllocations(ClusterAccels& accels, uint32_
     bool clasBytesChanged = m_maxClasBytes != maxClasBytes;
     bool maxVerticesChanged = m_maxVertices != maxVertices;
 
+    // Check if vertex normals setting changed by comparing current setting to buffer state
+    bool prevVertexNormalsEnabled = accels.clusterVertexNormalsBuffer.GetBuffer() != nullptr && accels.clusterVertexNormalsBuffer.GetNumElements() == m_maxVertices;
+    bool enableVertexNormalsChanged = (m_tessellatorConfig.enableVertexNormals != prevVertexNormalsEnabled);
+
     m_numInstances = numInstances;
     m_sceneSubdPatches = sceneSubdPatches;
     m_maxClusters = maxClusters;
@@ -1104,7 +1111,7 @@ void ClusterAccelBuilder::UpdateMemoryAllocations(ClusterAccels& accels, uint32_
     m_maxVertices = maxVertices;
     
     // No allocations needed
-    if (!numInstancesChanged && !sceneSubdPatchesChanged && !numClustersChanged && !clasBytesChanged && !maxVerticesChanged)
+    if (!numInstancesChanged && !sceneSubdPatchesChanged && !numClustersChanged && !clasBytesChanged && !maxVerticesChanged && !enableVertexNormalsChanged)
     {
         return;
     }
@@ -1221,6 +1228,12 @@ void ClusterAccelBuilder::UpdateMemoryAllocations(ClusterAccels& accels, uint32_
     {
         accels.clusterVertexPositionsBuffer.Release();
         accels.clusterVertexPositionsBuffer.Create(m_maxVertices, "cluster vertex positions", m_device);
+    }
+        
+    if (maxVerticesChanged || enableVertexNormalsChanged)
+    {
+        accels.clusterVertexNormalsBuffer.Release();
+        accels.clusterVertexNormalsBuffer.Create(m_tessellatorConfig.enableVertexNormals ? m_maxVertices : 1, "cluster vertex normals", m_device);
     }
 }
 
@@ -1348,6 +1361,8 @@ void ClusterAccelBuilder::BuildAccel(const RTXMGScene& scene, const TessellatorC
     stats.desired.m_numTriangles = counters.desiredTriangles;
     stats.desired.m_numClusters = counters.desiredClusters;
     stats.desired.m_vertexBufferSize = accels.clusterVertexPositionsBuffer.GetElementBytes() * counters.desiredVertices;
+    stats.desired.m_vertexNormalsBufferSize = m_tessellatorConfig.enableVertexNormals ? 
+        (accels.clusterVertexNormalsBuffer.GetElementBytes() * counters.desiredVertices) : 0;
     stats.desired.m_clasSize = counters.DesiredClasBytes();
     stats.desired.m_clusterDataSize = (m_clustersBuffer.GetElementBytes() + 
         accels.clusterShadingDataBuffer.GetElementBytes() +
@@ -1359,6 +1374,7 @@ void ClusterAccelBuilder::BuildAccel(const RTXMGScene& scene, const TessellatorC
     stats.allocated.m_numTriangles = counters.desiredTriangles;
     stats.allocated.m_numClusters = m_maxClusters;
     stats.allocated.m_vertexBufferSize = accels.clusterVertexPositionsBuffer.GetBytes();
+    stats.allocated.m_vertexNormalsBufferSize = accels.clusterVertexNormalsBuffer.GetBytes();
     stats.allocated.m_clasSize = accels.clasBuffer.GetBytes();
     stats.allocated.m_clusterDataSize = m_clustersBuffer.GetBytes() + accels.clusterShadingDataBuffer.GetBytes() + accels.clasPtrsBuffer.GetBytes();
     stats.allocated.m_blasSize = accels.blasBuffer.GetBytes();

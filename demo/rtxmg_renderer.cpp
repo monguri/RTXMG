@@ -114,9 +114,10 @@ RTXMGRenderer::RTXMGRenderer(Options const& opts)
         nvrhi::BindingLayoutItem::StructuredBuffer_SRV(6),   // env map marginal CDF
         nvrhi::BindingLayoutItem::StructuredBuffer_SRV(7),   // env map conditional Func
         nvrhi::BindingLayoutItem::StructuredBuffer_SRV(8),   // env map marginal Func
-        nvrhi::BindingLayoutItem::StructuredBuffer_SRV(9),  // cluster shading data
+        nvrhi::BindingLayoutItem::StructuredBuffer_SRV(9),   // cluster shading data
         nvrhi::BindingLayoutItem::StructuredBuffer_SRV(10),  // cluster vertex positions
-        nvrhi::BindingLayoutItem::StructuredBuffer_SRV(11),  // topology quality
+        nvrhi::BindingLayoutItem::StructuredBuffer_SRV(11),  // cluster vertex normals
+        nvrhi::BindingLayoutItem::StructuredBuffer_SRV(12),  // topology quality
         nvrhi::BindingLayoutItem::Sampler(0),                // linear wrap
         nvrhi::BindingLayoutItem::Texture_UAV(0),            // accum
         nvrhi::BindingLayoutItem::Texture_UAV(1),            // depth
@@ -188,8 +189,17 @@ void RTXMGRenderer::ReloadShaders()
 {
     m_shaderFactory->ClearCache();
 
-    m_pipelinesNeedsUpdate = true;
     m_needsRebind = true;
+    
+    // Clear all ray tracing permutations
+    for (auto& pipeline : m_rayPipelines)
+    {
+        pipeline.Reset();
+    }
+    for (auto& shaderTable : m_shaderTables)
+    {
+        shaderTable.Reset();
+    }
     
     m_clusterAccelBuilder = std::make_unique<ClusterAccelBuilder>(*m_shaderFactory, m_commonPasses, GetDescriptorTable()->GetDescriptorTable(), GetDevice());
     m_sceneAccels = std::make_unique<ClusterAccels>();
@@ -211,18 +221,7 @@ void RTXMGRenderer::ReloadShaders()
     m_fillInstanceDescsPSO.Reset();
 }
 
-void RTXMGRenderer::BuildOrUpdatePipelines()
-{
-    if (m_pipelinesNeedsUpdate)
-    {
-        if (!CreateRayTracingPipeline(*m_shaderFactory))
-        {
-            log::fatal("Failed to create ray tracing pipeline");
-        }
-        ResetSubframes();
-        m_pipelinesNeedsUpdate = false;
-    }
-}
+
 
 void RTXMGRenderer::ComputeMotionVectors(nvrhi::ICommandList* commandList)
 {
@@ -456,8 +455,6 @@ void RTXMGRenderer::Launch(nvrhi::ICommandList* commandList,
     uint32_t frameIndex,
     std::shared_ptr<engine::Light> light)
 {
-    BuildOrUpdatePipelines();
-
     if (m_needsEnvMapUpdate)
     {
         UpdateEnvMapSampling(commandList);
@@ -495,7 +492,8 @@ void RTXMGRenderer::Launch(nvrhi::ICommandList* commandList,
             nvrhi::BindingSetItem::StructuredBuffer_SRV(8, marginalFunc),
             nvrhi::BindingSetItem::StructuredBuffer_SRV(9, m_sceneAccels->clusterShadingDataBuffer),
             nvrhi::BindingSetItem::StructuredBuffer_SRV(10, m_sceneAccels->clusterVertexPositionsBuffer),
-            nvrhi::BindingSetItem::StructuredBuffer_SRV(11, m_subdInstancesBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(11, m_sceneAccels->clusterVertexNormalsBuffer),
+            nvrhi::BindingSetItem::StructuredBuffer_SRV(12, m_subdInstancesBuffer),
             nvrhi::BindingSetItem::Sampler(0, m_commonPasses->m_LinearWrapSampler),
             nvrhi::BindingSetItem::Texture_UAV(0, m_outputTextures[uint32_t(OutputTexture::Accumulation)]),
             nvrhi::BindingSetItem::Texture_UAV(1, m_outputTextures[uint32_t(OutputTexture::Depth)]),
@@ -546,8 +544,78 @@ void RTXMGRenderer::Launch(nvrhi::ICommandList* commandList,
         params.shadingMode = m_showMicroTriangles ? ShadingMode::PRIMARY_RAYS : m_shadingMode;
         commandList->writeBuffer(m_renderParamsBuffer, &params, sizeof(params));
 
+        // Get the appropriate pipeline and shader table for current permutation
+        RayTracingPermutation permutation(m_enableVertexNormals);
+        
+        auto GetRayTracingShaderTable = [this](const RayTracingPermutation& rtPermutation) -> nvrhi::rt::IShaderTable*
+            {
+                uint32_t index = rtPermutation.index();
+                if (!m_rayPipelines[index])
+                {
+                    // Create shader macros based on permutation
+                    std::vector<engine::ShaderMacro> macros;
+                    macros.push_back(engine::ShaderMacro("VERTEX_NORMALS", rtPermutation.isVertexNormalsEnabled() ? "1" : "0"));
+
+                    nvrhi::ShaderLibraryHandle shaderLibrary =
+                        m_shaderFactory->CreateShaderLibrary("rtxmg_demo/rtxmg_demo_path_tracer.hlsl", &macros);
+
+                    if (!shaderLibrary)
+                        return nullptr;
+
+                    nvrhi::rt::PipelineDesc pipelineDesc;
+                    pipelineDesc.globalBindingLayouts = { m_bindingLayout, m_bindlessLayout };
+                    pipelineDesc.shaders =
+                    {
+                        {"", shaderLibrary->getShader("RayGen", nvrhi::ShaderType::RayGeneration), nullptr},
+                        {"", shaderLibrary->getShader("Miss", nvrhi::ShaderType::Miss), nullptr},
+                        {"", shaderLibrary->getShader("ShadowMiss", nvrhi::ShaderType::Miss), nullptr}
+                    };
+
+                    pipelineDesc.hitGroups =
+                    { {
+                        "HitGroup",
+                        shaderLibrary->getShader("ClosestHit", nvrhi::ShaderType::ClosestHit),
+                        nullptr, // anyHitShader
+                        nullptr, // intersectionShader
+                        nullptr, // bindingLayout
+                        false    // isProceduralPrimitive
+                    },
+                    {
+                        "ShadowHitGroup",
+                        nullptr, // closestHitShader
+                        nullptr, // anyHitShader
+                        nullptr, // intersectionShader
+                        nullptr, // bindingLayout
+                        false    // isProceduralPrimitive
+                    } };
+
+                    pipelineDesc.maxPayloadSize = sizeof(RayPayload);
+                    pipelineDesc.maxRecursionDepth = m_params.ptMaxBounces + 1;
+                    pipelineDesc.hlslExtensionsUAV = int32_t(RTXMG_NVAPI_SHADER_EXT_SLOT);
+
+                    m_rayPipelines[index] = GetDevice()->createRayTracingPipeline(pipelineDesc);
+
+                    if (!m_rayPipelines[index])
+                        return nullptr;
+
+                    m_shaderTables[index] = m_rayPipelines[index]->createShaderTable();
+
+                    if (!m_shaderTables[index])
+                        return nullptr;
+
+                    m_shaderTables[index]->setRayGenerationShader("RayGen");
+                    m_shaderTables[index]->addHitGroup("HitGroup");
+                    m_shaderTables[index]->addHitGroup("ShadowHitGroup");
+                    m_shaderTables[index]->addMissShader("Miss");
+                    m_shaderTables[index]->addMissShader("ShadowMiss");
+                }
+                return m_shaderTables[index].Get();
+            };
+
+        nvrhi::rt::IShaderTable *shaderTable = GetRayTracingShaderTable(permutation);
+        
         nvrhi::rt::State state;
-        state.shaderTable = m_shaderTable;
+        state.shaderTable = shaderTable;
         state.bindings = { m_bindingSet, m_descriptorTable->GetDescriptorTable() };
         commandList->setRayTracingState(state);
 
@@ -809,65 +877,6 @@ void RTXMGRenderer::SceneFinishedLoading(std::shared_ptr<RTXMGScene> scene)
     ResetDenoiser();
 }
 
-bool RTXMGRenderer::CreateRayTracingPipeline(
-    engine::ShaderFactory& shaderFactory)
-{
-    m_shaderLibrary =
-        shaderFactory.CreateShaderLibrary("rtxmg_demo/rtxmg_demo_path_tracer.hlsl", nullptr);
-
-    if (!m_shaderLibrary)
-        return false;
-
-    nvrhi::rt::PipelineDesc pipelineDesc;
-    pipelineDesc.globalBindingLayouts = { m_bindingLayout, m_bindlessLayout };
-    pipelineDesc.shaders =
-    {
-        {"",m_shaderLibrary->getShader("RayGen", nvrhi::ShaderType::RayGeneration),nullptr},
-        {"", m_shaderLibrary->getShader("Miss", nvrhi::ShaderType::Miss),nullptr},
-        {"", m_shaderLibrary->getShader("ShadowMiss", nvrhi::ShaderType::Miss), nullptr}
-    };
-
-    pipelineDesc.hitGroups =
-    { {
-        "HitGroup",
-        m_shaderLibrary->getShader("ClosestHit", nvrhi::ShaderType::ClosestHit),
-        nullptr, // m_ShaderLibrary->getShader("AnyHit", nvrhi::ShaderType::AnyHit),
-        nullptr, // intersectionShader
-        nullptr, // bindingLayout
-        false    // isProceduralPrimitive
-    },
-    {
-        "ShadowHitGroup",
-        nullptr, // closestHitShader
-        nullptr, // anyHitShader
-        nullptr, // intersectionShader
-        nullptr, // bindingLayout
-        false    // isProceduralPrimitive
-    } };
-
-    pipelineDesc.maxPayloadSize = sizeof(RayPayload);
-    pipelineDesc.maxRecursionDepth = m_params.ptMaxBounces + 1;
-    pipelineDesc.hlslExtensionsUAV = int32_t(RTXMG_NVAPI_SHADER_EXT_SLOT);
-
-    m_rayPipeline = GetDevice()->createRayTracingPipeline(pipelineDesc);
-
-    if (!m_rayPipeline)
-        return false;
-
-    m_shaderTable = m_rayPipeline->createShaderTable();
-
-    if (!m_shaderTable)
-        return false;
-
-    m_shaderTable->setRayGenerationShader("RayGen");
-    m_shaderTable->addHitGroup("HitGroup");
-    m_shaderTable->addHitGroup("ShadowHitGroup");
-    m_shaderTable->addMissShader("Miss");
-    m_shaderTable->addMissShader("ShadowMiss");
-
-    return true;
-}
-
 void RTXMGRenderer::CreateAccelStructs()
 {
     nvrhi::rt::AccelStructDesc tlasDesc;
@@ -1055,6 +1064,8 @@ void RTXMGRenderer::UpdateAccelerationStructures(const TessellatorConfig &tessCo
     uint32_t frameIndex,
     nvrhi::ICommandList* commandList)
 {
+    m_enableVertexNormals = tessConfig.enableVertexNormals;
+
     if (!m_scene->GetSubdMeshes().empty())
     {
         m_clusterAccelBuilder->BuildAccel(*m_scene, tessConfig, *m_sceneAccels, buildStats, frameIndex, commandList);

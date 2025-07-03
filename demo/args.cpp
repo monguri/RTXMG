@@ -84,6 +84,7 @@ static void printUsageAndExit(const char* argv0,
         "  -sm [prim_rays|ao|pt]   | --shadingMode           primary rays or AO or path tracing\n"
         "  -spp <n>                                          Number of samples per pixel (need to use a perfect square number, default 1)\n"
         "  -tv <true|false>        | --timeview              Enable Timeview (default false)\n"
+        "  -vn <true|false>        | --vertexNormals         Enable vertex normals computation (default false)\n"
         "  -wf <true|false>        | --wireframe             Set wireframe (default true)\n"
         "  -wm                     | --windowMaximized       Start window maximized (default false)\n";
 
@@ -317,6 +318,10 @@ void Args::Parse(int argc, char const* const* argv)
         else if (arg == "--windowMaximized" || arg == "-wm")
         {
             startMaximized = true;
+        }
+        else if (arg == "--vertexNormals" || arg == "-vn")
+        {
+            parseArgValues(1, [&]() { enableVertexNormals = parseBooleanArg(arg.c_str(), argv[++i], enableVertexNormals); });
         }
         else
             printUsageAndExit(argv[0], std::string("Unknown option: ") + argv[i]);

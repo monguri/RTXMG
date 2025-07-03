@@ -242,6 +242,9 @@ public:
     bool GetHiZVisibilityEnabled() const { return m_args.enableHiZVisibility; }
     void SetHiZVisibilityEnabled(bool enabled);
 
+    bool GetVertexNormalsEnabled() const { return m_args.enableVertexNormals; }
+    void SetVertexNormalsEnabled(bool enabled);
+
     bool GetAccelBuildLoggingEnabled() const { return m_args.enableAccelBuildLogging; }
     void SetAccelBuildLoggingEnabled(bool enabled) { m_args.enableAccelBuildLogging = enabled; }
 
