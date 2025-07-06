@@ -116,15 +116,6 @@ std::unique_ptr<HiZBuffer> HiZBuffer::Create(uint2 size,
     hiz->m_displayParamsBuffer = device->createBuffer(nvrhi::utils::CreateVolatileConstantBufferDesc(
         sizeof(HiZDisplayParams), "HiZDisplayParams", engine::c_MaxRenderPassConstantBufferVersions));
 
-    hiz->m_debugBuffer.Create(65536, "HiZDebug", device);
-    auto debugBindingSetDesc = nvrhi::BindingSetDesc()
-        .addItem(nvrhi::BindingSetItem::StructuredBuffer_UAV(0, hiz->m_debugBuffer));
-
-    if (!nvrhi::utils::CreateBindingSetAndLayout(device, nvrhi::ShaderType::Compute, 1, debugBindingSetDesc, hiz->m_debugBL, hiz->m_debugBS))
-    {
-        log::fatal("Failed to create binding set and layout for hiz debug");
-    }
-
     return hiz;
 }
 
@@ -137,7 +128,14 @@ void HiZBuffer::Display(nvrhi::ITexture* output, nvrhi::ICommandList* commandLis
 
     auto device = commandList->getDevice();
 
-    auto bindingSetDesc = GetDesc()
+    nvrhi::BindingLayoutDesc bindingLayoutDesc;
+    nvrhi::BindingSetDesc bindingSetDesc;
+    GetDesc(&bindingLayoutDesc, &bindingSetDesc, true);
+    bindingLayoutDesc
+        .addItem(nvrhi::BindingLayoutItem::ConstantBuffer(0))
+        .addItem(nvrhi::BindingLayoutItem::Texture_UAV(0))
+        .setVisibility(nvrhi::ShaderType::Compute);
+    bindingSetDesc
         .addItem(nvrhi::BindingSetItem::ConstantBuffer(0, m_displayParamsBuffer))
         .addItem(nvrhi::BindingSetItem::Texture_UAV(0, output));
 
@@ -148,10 +146,19 @@ void HiZBuffer::Display(nvrhi::ITexture* output, nvrhi::ICommandList* commandLis
     params.offsetY = offset.y;
     commandList->writeBuffer(m_displayParamsBuffer, &params, sizeof(params));
 
-    nvrhi::BindingSetHandle bindingSet;
-    if (!nvrhi::utils::CreateBindingSetAndLayout(device, nvrhi::ShaderType::Compute, 0, bindingSetDesc, m_displayBL, bindingSet))
+    if (!m_displayBL)
     {
-        log::fatal("Failed to create binding set and layout for hiz display");
+        m_displayBL = device->createBindingLayout(bindingLayoutDesc);
+        if (!m_displayBL)
+        {
+            log::fatal("Failed to create binding layout for hiz display");
+        }
+    }
+
+    nvrhi::BindingSetHandle bindingSet = device->createBindingSet(bindingSetDesc, m_displayBL);
+    if (!bindingSet)
+    {
+        log::fatal("Failed to create binding set for hiz display");
     }
 
     if (!m_displayPSO)
@@ -193,22 +200,29 @@ void HiZBuffer::Display(nvrhi::ITexture* output, nvrhi::ICommandList* commandLis
     }
 }
 
-nvrhi::BindingSetDesc HiZBuffer::GetDesc(bool writeable) const
+void HiZBuffer::GetDesc(nvrhi::BindingLayoutDesc* outBindingLayout, nvrhi::BindingSetDesc* outBindingSet, bool writeable) const
 {
-    nvrhi::BindingSetDesc ret = nvrhi::BindingSetDesc();
+    *outBindingLayout = nvrhi::BindingLayoutDesc();
+    *outBindingSet = nvrhi::BindingSetDesc();
 
-    for (uint i = 0; i < HIZ_MAX_LODS; ++i)
+    if (writeable)
     {
-        if (writeable)
+        outBindingLayout->addItem(nvrhi::BindingLayoutItem::Texture_UAV(0).
+            setSize(HIZ_MAX_LODS));
+        for (uint32_t i = 0; i < HIZ_MAX_LODS; ++i)
         {
-            ret.addItem(nvrhi::BindingSetItem::Texture_UAV(i, textureObjects[i]));
-        }
-        else
-        {
-            ret.addItem(nvrhi::BindingSetItem::Texture_SRV(i, textureObjects[i]));
+            outBindingSet->addItem(nvrhi::BindingSetItem::Texture_UAV(0, textureObjects[i]).setArrayElement(i));
         }
     }
-    return ret;
+    else
+    {
+        outBindingLayout->addItem(nvrhi::BindingLayoutItem::Texture_SRV(0).
+            setSize(HIZ_MAX_LODS));
+        for (uint32_t i = 0; i < HIZ_MAX_LODS; ++i)
+        {
+            outBindingSet->addItem(nvrhi::BindingSetItem::Texture_SRV(0, textureObjects[i]).setArrayElement(i));
+        }
+    }
 }
 
 void HiZBuffer::Reduce(nvrhi::ITexture* zbuffer, nvrhi::ICommandList* commandList)
@@ -234,23 +248,39 @@ void HiZBuffer::Reduce(nvrhi::ITexture* zbuffer, nvrhi::ICommandList* commandLis
     params.zBufferInvSize = float2(1.f / zwidth, 1.f / zheight);
     commandList->writeBuffer(m_reduceParamsBuffer, &params, sizeof(params));
 
-    auto bindingSetDesc = GetDesc(true)
+    nvrhi::BindingLayoutDesc bindingLayoutDesc;
+    nvrhi::BindingSetDesc bindingSetDesc;
+    GetDesc(&bindingLayoutDesc, &bindingSetDesc, true);
+    bindingLayoutDesc
+        .addItem(nvrhi::BindingLayoutItem::Texture_SRV(0))
+        .addItem(nvrhi::BindingLayoutItem::StructuredBuffer_SRV(1))
+        .addItem(nvrhi::BindingLayoutItem::Sampler(0))
+        .setVisibility(nvrhi::ShaderType::Compute);
+    bindingSetDesc
         .addItem(nvrhi::BindingSetItem::Texture_SRV(0, zbuffer))
         .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(1, m_reduceParamsBuffer))
         .addItem(nvrhi::BindingSetItem::Sampler(0, m_sampler));
 
-    nvrhi::BindingSetHandle bindingSet;
-    if (!nvrhi::utils::CreateBindingSetAndLayout(device, nvrhi::ShaderType::Compute, 0, bindingSetDesc, m_passBL, bindingSet))
+    if (!m_passBL)
     {
-        log::fatal("Failed to create binding set and layout for hiz reduce pass 1");
+        m_passBL = device->createBindingLayout(bindingLayoutDesc);
+        if (!m_passBL)
+        {
+            log::fatal("Failed to create binding layout for hiz reduce");
+        }
     }
 
+    nvrhi::BindingSetHandle bindingSet = device->createBindingSet(bindingSetDesc, m_passBL);
+    if (!bindingSet)
+    {
+        log::fatal("Failed to create binding set for hiz reduce");
+    }
+  
     if (!m_pass1PSO)
     {
         nvrhi::ComputePipelineDesc computePipelineDesc = nvrhi::ComputePipelineDesc()
             .setComputeShader(m_pass1Shader)
-            .addBindingLayout(m_passBL)
-            .addBindingLayout(m_debugBL);
+            .addBindingLayout(m_passBL);
 
         m_pass1PSO = device->createComputePipeline(computePipelineDesc);
 
@@ -261,8 +291,7 @@ void HiZBuffer::Reduce(nvrhi::ITexture* zbuffer, nvrhi::ICommandList* commandLis
 
     auto state = nvrhi::ComputeState()
         .setPipeline(m_pass1PSO)
-        .addBindingSet(bindingSet)
-        .addBindingSet(m_debugBS);
+        .addBindingSet(bindingSet);
 
     commandList->setComputeState(state);
 

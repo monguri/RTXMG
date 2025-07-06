@@ -82,9 +82,9 @@ struct Box3
 #endif
 };
 
-#ifdef __cplusplus
+#if defined(__cplusplus)
 static_assert(sizeof(Box3) % 16 == 0);
-#else
+#elif defined(TARGET_D3D12)
 _Static_assert(sizeof(Box3) % 16 == 0, "Must be 16 byte aligned for constant buffer");
 #endif
 

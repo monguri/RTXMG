@@ -114,6 +114,7 @@ struct Args : SceneArgs
     bool enableFrustumVisibility = true;
     bool enableBackfaceVisibility = true;
     bool enableHiZVisibility = true;
+    bool updateTessCamera = true;
 
     TessellatorConfig::MemorySettings tessMemorySettings;
     TessellatorConfig::VisibilityMode visMode = TessellatorConfig::VisibilityMode::VIS_LIMIT_EDGES;
@@ -122,21 +123,21 @@ struct Args : SceneArgs
     // Note: the defaults here are intended for TMR
     int isoLevelSharp = 6;
     int isoLevelSmooth = 3;
+    uint32_t globalIsolationLevel = TessellatorConfig::kMaxIsolationLevel;
 
-    bool  updateTessCamera = true;
     float fineTessellationRate = TessellatorConfig::kDefaultFineTessellationRate;
     float coarseTessellationRate = TessellatorConfig::kDefaultCoarseTessellationRate;
     ClusterPattern clusterPattern = ClusterPattern::SLANTED;
         
     float3 missColor = { .75, .75, .75 };
-    
+
     bool debug = false;
     bool gpuValidation = false;
     bool aftermath = false;
+    bool enableStreamlineLog = false;    
     bool enableAccelBuildLogging = false;
     bool enableTimeView = false;
     bool startMaximized = false;
-    bool enableStreamlineLog = false;
 
     void Parse(int argc, char const* const* argv);
 };

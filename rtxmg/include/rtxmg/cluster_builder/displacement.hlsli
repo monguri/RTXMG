@@ -44,7 +44,7 @@ LimitFrame DoDisplacement(TexcoordEvaluatorHLSL texcoordEval,
     LimitFrame limit,
     uint32_t iSurface,
     float2 uv,
-    Texture2D displacementTex,
+    Texture2D<float> displacementTex,
     SamplerState dispSampler,
     float scale)
 {
@@ -55,17 +55,20 @@ LimitFrame DoDisplacement(TexcoordEvaluatorHLSL texcoordEval,
         
     // compute subd limit and normal
     const float3 normal = normalize(cross(limit.deriv1, limit.deriv2));
-
     TexCoordLimitFrame texcoord = texcoordEval.EvaluateLinearSubd(uv, iSurface);
-        
-    float displacement = displacementTex.SampleLevel(dispSampler, texcoord.uv, 0).r;
     
-    const float2 dsdt = float2(1.0f / 1024, 1.0f / 1024);
+    // Sample 1 texel 
+    float2 dimensions;
+    displacementTex.GetDimensions(dimensions.x, dimensions.y);
+    float2 dsdt = 1.0f / dimensions;
+    float displacement = scale * displacementTex.SampleLevel(dispSampler, texcoord.uv, 0);
+    
     // compute derivatives of displacement map, (dD/du) and (dD/dv) from finite differences:
     float2 texcoordDu         = texcoord.uv + dsdt.x * texcoord.deriv1;
     float2 texcoordDv         = texcoord.uv + dsdt.y * texcoord.deriv2;
-    float  displacement1       = displacementTex.SampleLevel(dispSampler, texcoordDu, 0 ).r;
-    float  displacement2       = displacementTex.SampleLevel(dispSampler, texcoordDv, 0 ).r;
+    
+    float displacement1 = scale * displacementTex.SampleLevel(dispSampler, texcoordDu, 0);
+    float displacement2 = scale * displacementTex.SampleLevel(dispSampler, texcoordDv, 0);
     float  displacementDeriv1 = ( displacement1 - displacement ) / dsdt.x;
     float  displacementDeriv2 = ( displacement2 - displacement ) / dsdt.y;
     // compute displaced parital derivates
@@ -74,7 +77,7 @@ LimitFrame DoDisplacement(TexcoordEvaluatorHLSL texcoordEval,
 
     LimitFrame ret;
     
-    ret.p = limit.p + scale * displacement * normal;
+    ret.p = limit.p + displacement * normal;
     ret.deriv1 = dpdu;
     ret.deriv2 = dpdv;
     

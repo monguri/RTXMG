@@ -1,4 +1,4 @@
-# RTX Mega Geometry 0.9 (Beta)
+# RTX Mega Geometry
 
 ![Title](./docs/images/banner.jpg)
 
@@ -14,7 +14,7 @@
 
 ## Overview
 
-RTX Mega Geometry (RTXMG) is a DX12 code sample that shows how to use NvAPI to quickly
+RTX Mega Geometry (RTX MG) is a DX12 and Vulkan code sample that shows how to quickly
 build ray-tracing acceleration structures for subdivision surfaces with structured
 clusters. It contains a reference HLSL path tracing demo app that can be used as a
 learning tool to begin integration with your own graphics engine.
@@ -23,20 +23,24 @@ learning tool to begin integration with your own graphics engine.
 
 * Real-time adaptive sampling of Catmull-Clark limit surfaces
 * Structured cluster tessellation and displacement mapping
-* BVH build with NVAPI cluster template extensions for DXR
+* BVH build with cluster templates using NVAPI for DXR, and the VK_NV_cluster_acceleration_structure extension for Vulkan.
 * Hierarchical Z-buffer for reducing tessellation rate of non-primary ray geometry
 * DLSS Ray Reconstruction denoising
 
 ## Requirements
 
+To Run:
 - Windows 10
-- NVIDIA RTX GPU (10 GB VRAM)
-- GeForce Game Ready Driver 570 or newer
-- DirectX 12 SDK with Shader Model 6.6 support
-  (CMake fetches D3D12 Agility SDK automatically)
-- DirectX Raytracing 1.1 API or higher
+- NVIDIA RTX GPU (10 GB VRAM or greater)
+- GeForce Game Ready Driver 570 or later
+- DirectX Raytracing 1.1 API or later
+
+To Build:
 - CMake v3.31+
-- Visual Studio 2019 or later with Windows 10 SDK version 10.0.20348.0 or later
+- Windows 10 SDK 10.0.20348.0 or later
+- MSVC Compiler 19.43.34810 (Visual Studio 2022 17.13) or later
+- For Windows: DirectX 12 AgilitySDK will be fetched automatically
+- For Vulkan: Vulkan SDK 1.4.313 or later
 
 ## Folder Structure
 
@@ -125,7 +129,7 @@ please cite the project.
 
 BibTex:
 ```bibtex
-@online{RTXMG,
+@online{RTX MG,
    title   = {{{NVIDIA}}\textregistered{} {RTX Mega Geometry}},
    author  = {{NVIDIA}},
    year    = 2025,
@@ -136,7 +140,7 @@ BibTex:
 
 ## Known Issues
 
-1. The RTXMG SDK does not currently support unstructured clusters or rasterization.
+1. The RTX MG SDK does not currently support unstructured clusters or rasterization.
 
 ## License
 

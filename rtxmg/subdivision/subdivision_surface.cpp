@@ -357,7 +357,7 @@ SubdivisionSurface::SubdivisionSurface(TopologyCache& topologyCache,
         Tmr::TopologyMap::Traits traits;
         traits.SetCompatible(schemeType, schemeOptions, endCaps);
 
-        m_topology_map = &topologyCache.get(traits.value());
+        m_topology_map = &topologyCache.get(traits.value);
     }
 
     Tmr::TopologyMap& topologyMap = *m_topology_map->aTopologyMap;

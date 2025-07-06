@@ -135,8 +135,7 @@ namespace stats
         GPUTimer& gpuFrameTime = Profiler::InitTimer<GPUTimer>("GPU/frame (ms)");
         GPUTimer& gpuRenderTime = Profiler::InitTimer<GPUTimer>("GPU/trace (ms)");
         GPUTimer& gpuDenoiserTime = Profiler::InitTimer<GPUTimer>("GPU/denoiser (ms)");
-        GPUTimer& gpuBlitTime = Profiler::InitTimer<GPUTimer>("GPU/blit (ms)");
-
+        
         GPUTimer& hiZRenderTime = Profiler::InitTimer<GPUTimer>("GPU/hi-z (ms)");
         GPUTimer& zReprojectionTime = Profiler::InitTimer<GPUTimer>("GPU/zReprojection (ms)");
         GPUTimer& zRenderPassTime = Profiler::InitTimer<GPUTimer>("GPU/zRenderPass (ms)");

@@ -42,6 +42,9 @@ struct TessellatorConfig
     // 3GB CLAS memory at 1440p render res
     static constexpr size_t kDefaultClasBufferBytes = (3076ull << 20);
 
+    static constexpr uint32_t kMinIsolationLevel = 1u;
+    static constexpr uint32_t kMaxIsolationLevel = 6u;
+
     enum class VisibilityMode
     {
         VIS_LIMIT_EDGES = 0,
@@ -85,13 +88,20 @@ struct TessellatorConfig
 
     uint2            viewportSize = { 0u, 0u };
     uint4            edgeSegments = { 8, 8, 8, 8 };
-    unsigned char    quantNBits = 0;
+    uint32_t         isolationLevel = 0; // 0 is dynamic, >0 is fixed
     ClusterPattern   clusterPattern = ClusterPattern::SLANTED;
+    unsigned char    quantNBits = 0;
 
     float            displacementScale = 1.0f;
 
     const Camera* camera = nullptr;
     const ZBuffer* zbuffer = nullptr;
+
+    int debugSurfaceIndex = 0;
+    int debugClusterIndex = 0;
+    int debugLaneIndex = 0;
+
+    bool hasValidDebugIndex() const { return debugSurfaceIndex >= 0 && debugLaneIndex >= 0; }
 };
 
 #if __cplusplus

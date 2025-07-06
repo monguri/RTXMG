@@ -1,4 +1,24 @@
-# RTXMG SDK Change Log
+# RTX Mega Geometry SDK Change Log
+
+## 1.0.0
+
+Vulkan Support
+* Requires Vulkan SDK 1.4.313 or greater which uses Cluster SPIRV intrinsics
+* Convert all bindless arrays to use ResourceDescriptorHeap via Vulkan's mutable descriptor extension
+* Fix validation warnings and Vulkan shutdown crashes
+
+Minor Changes
+* Expose isolation level in the UI
+* Add smooth single crease sharpness, which prevents transition artifacts between single and multicrease edges. Only visible if the isolation level is lowered.
+* Improve Profiler "Frame" Tab, add average times in tool tip, expose motion vector pass time
+* Update to Streamline v2.8.0
+
+Bug Fixes
+* Fix thread-ordering to be compliant with SM6.6 1D quad lane ordering.
+* Fix micro-triangle view toggle when in DLAA mode.
+* Fix cases where a surface resulted in over U16_MAX clusters
+* Fix tessellation for when there was per-material displacement scaling
+* Fix crash for some malformed OBJ files with '0' values for some indices.
 
 ## 0.9.2
 

@@ -53,7 +53,7 @@ struct SubdivisionNode
     static int terminalNodeSize() { return 3; }
     static int recursiveNodeSize() { return 6; }
 
-    static int getNumChilren(NodeType type)
+    static int getNumChildren(NodeType type)
     {
         switch (type)
         {

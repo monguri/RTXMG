@@ -30,7 +30,6 @@
 
 #include <donut/core/math/math.h>
 #include <donut/engine/BindingCache.h>
-#include <donut/engine/DescriptorTableManager.h>
 #include <donut/engine/SceneGraph.h>
 #include <donut/engine/ShaderFactory.h>
 #include <donut/engine/TextureCache.h>
@@ -50,8 +49,7 @@ class ZRenderer
 {
 public:
 
-    ZRenderer(std::shared_ptr<ShaderFactory> shaderFactory,
-        std::shared_ptr<DescriptorTableManager> descriptorTable);
+    ZRenderer(std::shared_ptr<ShaderFactory> shaderFactory);
     ~ZRenderer();
 
     void Render(Camera& camera, nvrhi::rt::AccelStructHandle tlas,
@@ -76,5 +74,4 @@ private:
     nvrhi::ShaderLibraryHandle m_shaderLibrary;
 
     std::shared_ptr<ShaderFactory> m_shaderFactory;
-    std::shared_ptr<DescriptorTableManager> m_descriptorTable;
 };

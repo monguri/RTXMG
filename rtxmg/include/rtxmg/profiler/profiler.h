@@ -94,7 +94,7 @@ class Profiler
     static Profiler& Get();
 
     // force the immediate release all device resources
-    void Terminate();
+    static void Terminate();
 
     // frequency < 0 : profile every frame (benchmark mode)
     // frequency == 0 : disable profiling
@@ -162,3 +162,20 @@ inline timer_type& Profiler::InitTimer( char const* name )
     else if constexpr( std::is_same_v<timer_type, GPUTimer> )
         return *profiler.m_gpuTimers.emplace_back( std::make_unique<GPUTimer>( name ) );
 }
+
+class ScopedGPUTimer
+{
+public:
+    ScopedGPUTimer(Profiler::Timer<StopwatchGPU>& timer, nvrhi::ICommandList *commandlist) : m_timer(timer) 
+    {
+        m_timer.Start(commandlist);
+    }
+
+    ~ScopedGPUTimer()
+    {
+        m_timer.Stop();
+    }
+
+private:
+    Profiler::Timer<StopwatchGPU>& m_timer;
+};

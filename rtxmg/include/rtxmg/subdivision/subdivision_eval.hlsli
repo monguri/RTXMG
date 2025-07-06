@@ -27,6 +27,10 @@
 #include "rtxmg/subdivision/subdivision_plan_hlsl.h"
 #include "rtxmg/subdivision/vertex.h"
 
+#ifndef SHADER_DEBUG
+#define SHADER_DEBUG(x) 
+#endif
+
 // SURFACE_TYPE
 #define SURFACE_TYPE_PUREBSPLINE 0
 #define SURFACE_TYPE_REGULARBSPLINE 1
@@ -47,8 +51,8 @@
 
 static const Index kPureBSplinePatchPointIndices[kPatchSize] = { 6, 7, 8, 9, 5, 0, 1, 10, 4, 3, 2, 11, 15, 14, 13, 12 };
     
-const static uint32_t kNumWaveSurfaceUVSamples = 8;
-const static float2 kWaveSurfaceUVSamples[kNumWaveSurfaceUVSamples] =
+static const uint32_t kNumWaveSurfaceUVSamples = 8;
+static const float2 kWaveSurfaceUVSamples[kNumWaveSurfaceUVSamples] =
 {
     { 0, 0 },
     { 0.5, 0 },
@@ -339,7 +343,7 @@ struct SubdivisionEvaluatorHLSL
     }
 
 #ifdef PATCH_POINTS_WRITEABLE
-    void WaveEvaluatePatchPoints(uint32_t iLane)
+    void WaveEvaluatePatchPoints(uint32_t iLane, uint32_t numLanes)
     {
         SurfaceDescriptor desc = GetSurfaceDesc();
         // desc.firstControlPoint is the offset to the first control point for this surface in vertexControlPointIndices
@@ -348,7 +352,7 @@ struct SubdivisionEvaluatorHLSL
         const uint32_t numPatchPoints = plan.GetTreeDescriptor().GetNumPatchPoints(m_isolationLevel);
 
         uint32_t globalPatchPointOffset = m_vertexPatchPointsOffsets[m_surfaceIndex];
-        for (int iPatchPoint = iLane; iPatchPoint < numPatchPoints; iPatchPoint += 32)  // advance wave
+        for (int iPatchPoint = iLane; iPatchPoint < numPatchPoints; iPatchPoint += numLanes)  // advance wave
         {
             float3 patchPoint = float3(0, 0, 0);
             for (int i = 0; i < plan.m_data.numControlPoints; ++i)
@@ -463,7 +467,7 @@ struct DynamicSubdivisionEvaluatorHLSL : SubdivisionEvaluatorHLSL
         }
     }
 
-    void Evaluate(float2 uv, out LimitFrame limit, out LimitFrame limitPrev)
+    void Evaluate(out LimitFrame limit, out LimitFrame limitPrev, float2 uv)
     {
         if (IsPureBSplinePatch())
         {
@@ -479,10 +483,13 @@ struct DynamicSubdivisionEvaluatorHLSL : SubdivisionEvaluatorHLSL
         }
     }
 
-    void EvaluatePrev(float2 uv, out LimitFrame limit)
+    LimitFrame EvaluatePrev(float2 uv)
     {
         LimitFrame dummy;
-        Evaluate(uv, dummy, limit);
+        LimitFrame limit;
+        limit.Clear();
+        Evaluate(dummy, limit, uv);
+        return limit;
     }
 };
 
@@ -494,8 +501,11 @@ struct TexcoordEvaluatorHLSL
     TEXCOORD_PATCH_POINTS_TYPE m_texcoordPatchPoints;
     StructuredBuffer<float2> m_texcoordControlPoints;
     
-    void EvalLinearBasis(float u, float v, out float weights[4], out float duWeights[4], out float dvWeights[4])
+    void EvalLinearBasis(out float weights[4], out float duWeights[4], out float dvWeights[4], float2 uv)
     {
+        float u = uv.x;
+        float v = uv.y;
+        
         weights[0] = (1.0f - u) * (1.0f - v);
         weights[1] = u * (1.0f - v);
         weights[2] = u * v;
@@ -587,7 +597,7 @@ struct TexcoordEvaluatorHLSL
         LocalIndex subface = desc.GetQuadSubfaceIndex();
 
         float pointWeights[4], duWeights[4], dvWeights[4];
-        EvalLinearBasis(uv.x, uv.y, pointWeights, duWeights, dvWeights);
+        EvalLinearBasis(pointWeights, duWeights, dvWeights, uv);
         
         for (int k = 0; k < 4; ++k)
         {

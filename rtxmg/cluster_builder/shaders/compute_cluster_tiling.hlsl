@@ -42,10 +42,11 @@
 // This is most likely since we use the same number of registers (otherwise we pay for local data stores/reads)
 #define ENABLE_WAVE_INTRINSICS 0
 
+#include "rtxmg/utils/shader_debug.h"
+
 #include <donut/shaders/material_cb.h>
 #include <donut/shaders/binding_helpers.hlsli>
 #include <donut/shaders/bindless.h>
-
 
 #include "rtxmg/cluster_builder/cluster.h"
 #include "rtxmg/subdivision/subdivision_eval.hlsli"
@@ -56,12 +57,11 @@
 #include "rtxmg/subdivision/osd_ports/tmr/subdivisionNode.h"
 #include "rtxmg/subdivision/osd_ports/tmr/nodeDescriptor.h"
 #include "rtxmg/utils/box3.h"
-#include "rtxmg/utils/debug.h"
 #include "rtxmg/hiz/hiz_buffer_constants.h"
 
 #include "rtxmg/cluster_builder/displacement.hlsli"
 
-static const uint32_t kComputeClusterTilingThreadsX = 32;
+static const uint32_t kComputeClusterTilingLanes = 32;
 
 ConstantBuffer<ComputeClusterTilingParams> g_Params : register(b0);
 
@@ -91,18 +91,16 @@ RWStructuredBuffer<nvrhi::rt::cluster::IndirectInstantiateTemplateArgs> u_Indire
 RWStructuredBuffer<nvrhi::GpuVirtualAddress> u_ClasAddresses : register(u5);
 RWStructuredBuffer<float3> u_VertexPatchPoints : register(u6);
 RWStructuredBuffer<float2> u_TexCoordPatchPoints : register(u7);
-
-RWStructuredBuffer<float4> u_Debug : register(u8);
+RWStructuredBuffer<ShaderDebugElement> u_Debug : register(u8);
 
 SamplerState s_DisplacementSampler : register(s0);
 SamplerState s_HizSampler : register(s1);
 
-VK_BINDING(1, 1) Texture2D t_BindlessTextures[] : register(t0, space2);
-Texture2D<float> t_HiZBuffer[HIZ_MAX_LODS]: register(t0, space3);
+VK_BINDING(0, 1) Texture2D<float> t_HiZBuffer[HIZ_MAX_LODS]: register(t0, space1);
+
 
 const static uint32_t nSamples = kComputeClusterTilingWaves * kNumWaveSurfaceUVSamples;
 groupshared LimitFrame samples[nSamples];
-static uint g_debugOutputSlot = 0;
 
 #if ENABLE_GROUP_ATOMICS
 groupshared uint32_t s_clusters;
@@ -376,7 +374,7 @@ void WaveEvaluateBSplinePatch8(uint32_t iWave,
     else
     {
         // there is no wave parallel implementation for non-bspline patches falling back to single thread
-        subd.WaveEvaluatePatchPoints(iLane);
+        subd.WaveEvaluatePatchPoints(iLane, kComputeClusterTilingLanes);
         if (iLane < kNumWaveSurfaceUVSamples)
         {
             LimitFrame limit = subd.EvaluateLimitSurface(kWaveSurfaceUVSamples[iLane]);
@@ -395,7 +393,7 @@ void WaveEvaluateBSplinePatch8(uint32_t iWave,
     }
 #elif SURFACE_TYPE == SURFACE_TYPE_LIMIT
     // there is no wave parallel implementation for non-bspline patches falling back to single thread
-    subd.WaveEvaluatePatchPoints(iLane);
+    subd.WaveEvaluatePatchPoints(iLane, kComputeClusterTilingLanes);
     if (iLane < kNumWaveSurfaceUVSamples)
     {
         LimitFrame limit = subd.EvaluateLimitSurface(kWaveSurfaceUVSamples[iLane]);
@@ -411,12 +409,12 @@ void WaveEvaluateBSplinePatch8(uint32_t iWave,
     float displacementScale;
     int displacementTexIndex;
     GetDisplacement(material, g_Params.globalDisplacementScale, displacementTexIndex, displacementScale);
-    Texture2D displacementTex = t_BindlessTextures[displacementTexIndex];
-    if (iLane < kNumWaveSurfaceUVSamples)
+    if (displacementTexIndex >= 0 && iLane < kNumWaveSurfaceUVSamples)
     {
+        Texture2D<float> displacementTexture = ResourceDescriptorHeap[NonUniformResourceIndex(displacementTexIndex)];
         LimitFrame displaced = DoDisplacement(texcoordEval,
             samples[waveSampleOffset + iLane], subd.m_surfaceIndex, kWaveSurfaceUVSamples[iLane],
-            displacementTex,
+            displacementTexture,
             s_DisplacementSampler, displacementScale);
         samples[waveSampleOffset + iLane] = displaced;
     }
@@ -508,24 +506,24 @@ void GathererWriteCluster(Cluster cluster, uint32_t clusterIndex, GridSampler gr
     u_ClusterShadingData[clusterIndex] = shadingData;
 }
 
-void WriteSurfaceWave(uint32_t iWave, uint32_t iLane, uint32_t iSurface, uint16_t edgeSegments)
+void WriteSurfaceWave(uint32_t iWave, uint32_t iLane, uint32_t iSurface, GridSampler rSampler)
 {
     uint32_t waveSampleOffset = kNumWaveSurfaceUVSamples * iWave;
-    
-    GridSampler rSampler;
-    rSampler.edgeSegments[0] = WaveReadLaneAt(edgeSegments, 0);
-    rSampler.edgeSegments[1] = WaveReadLaneAt(edgeSegments, 1);
-    rSampler.edgeSegments[2] = WaveReadLaneAt(edgeSegments, 2);
-    rSampler.edgeSegments[3] = WaveReadLaneAt(edgeSegments, 3);
-    
     if (iLane == 0)
     {
         u_GridSamplers[iSurface] = rSampler;
     }
 
+    SHADER_DEBUG(uint4(rSampler.edgeSegments));
+
     uint16_t2 surfaceSize = rSampler.GridSize();
     SurfaceTiling surfaceTiling = MakeSurfaceTiling(surfaceSize);
 
+    [unroll]
+    for (uint32_t i = 0; i < 4; i++)
+    {
+        SHADER_DEBUG(uint4(surfaceTiling.subTilings[i].tilingSize, surfaceTiling.subTilings[i].clusterSize));
+    }
 
     uint32_t clusterCount = 0;
     uint32_t vertexCount = 0;
@@ -533,7 +531,7 @@ void WriteSurfaceWave(uint32_t iWave, uint32_t iLane, uint32_t iSurface, uint16_
     uint32_t clusterTris = 0;
     
 #if ENABLE_WAVE_INTRINSICS
-    _Static_assert(SurfaceTiling::N_SUB_TILINGS <= kComputeClusterTilingThreadsX, "Must have enough lanes to use wave ops");
+    _Static_assert(SurfaceTiling::N_SUB_TILINGS <= kComputeClusterTilingLanes, "Must have enough lanes to use wave ops");
     if (iLane < SurfaceTiling::N_SUB_TILINGS)
     {
         ClusterTiling clusterTiling = surfaceTiling.subTilings[iLane];
@@ -576,6 +574,8 @@ void WriteSurfaceWave(uint32_t iWave, uint32_t iLane, uint32_t iSurface, uint16_
         }
 #endif
         clusterTris = 2 * (uint32_t)surfaceSize.x * (uint32_t)surfaceSize.y;
+
+        SHADER_DEBUG(uint4(clusterCount, vertexCount, clasBlocks, clusterTris));
     }
 
 #if ENABLE_GROUP_ATOMICS
@@ -680,7 +680,7 @@ void WriteSurfaceWave(uint32_t iWave, uint32_t iLane, uint32_t iSurface, uint16_
         // make clusters with tilingSize
         for (uint32_t iCluster = iLane;
             iCluster < tilingClusterCount;
-            iCluster += kComputeClusterTilingThreadsX)
+            iCluster += kComputeClusterTilingLanes)
         {
             Cluster cluster = MakeCluster(iSurface, tilingVertexOffset + tilingClusterVertexCount * iCluster,
                     surfaceTiling.ClusterOffset(iTiling, iCluster), tilingClusterSize.x, tilingClusterSize.y);
@@ -697,12 +697,14 @@ void WriteSurfaceWave(uint32_t iWave, uint32_t iLane, uint32_t iSurface, uint16_
     }
 }
 
-[numthreads(kComputeClusterTilingThreadsX, kComputeClusterTilingWaves, 1)]
+[numthreads(kComputeClusterTilingLanes * kComputeClusterTilingWaves, 1, 1)]
 void main(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
-{
-    const uint32_t iLane = threadIdx.x;
-    const uint32_t iWave = threadIdx.y;
+{  
+    const uint32_t iLane = threadIdx.x % kComputeClusterTilingLanes;
+    const uint32_t iWave = threadIdx.x / kComputeClusterTilingLanes;
     const uint32_t iSurface = kComputeClusterTilingWaves * groupIdx.x + iWave + g_Params.surfaceStart;
+
+    SHADER_DEBUG_INIT(u_Debug, uint2(g_Params.debugSurfaceIndex, g_Params.debugLaneIndex), uint2(iSurface, iLane));
 
 #if ENABLE_GROUP_ATOMICS
     if (iLane == 0 && iWave == 0)
@@ -731,7 +733,8 @@ void main(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
 
     SubdivisionEvaluatorHLSL subd;
     subd.m_surfaceIndex = iSurface;
-    subd.m_isolationLevel = (uint16_t)g_Params.isolationLevel;
+
+    subd.m_isolationLevel = uint16_t(g_Params.isolationLevel);
     subd.m_surfaceDescriptors = t_VertexSurfaceDescriptors;
     subd.m_plans = t_Plans;
     subd.m_subpatchTrees = t_SubpatchTrees;
@@ -775,5 +778,12 @@ void main(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
     const float tessFactor = g_Params.coarseTessellationRate / g_Params.fineTessellationRate;
 
     uint16_t edgeSegments = EvaluateEdgeSegments(iWave, iLane, visibility, tessFactor);
-    WriteSurfaceWave(iWave, iLane, iSurface, edgeSegments);
+
+    GridSampler rSampler;
+    rSampler.edgeSegments[0] = WaveReadLaneAt(edgeSegments, 0);
+    rSampler.edgeSegments[1] = WaveReadLaneAt(edgeSegments, 1);
+    rSampler.edgeSegments[2] = WaveReadLaneAt(edgeSegments, 2);
+    rSampler.edgeSegments[3] = WaveReadLaneAt(edgeSegments, 3);
+    
+    WriteSurfaceWave(iWave, iLane, iSurface, rSampler);
 }

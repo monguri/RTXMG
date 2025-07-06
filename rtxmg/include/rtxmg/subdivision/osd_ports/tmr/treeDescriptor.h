@@ -58,7 +58,7 @@ struct TreeDescriptorHLSL
         return unpack(m_subpatchTrees[m_treeOffset], 16, 16);
     }
 
-    uint32_t GetNumPatchPoints(int level)
+    uint32_t GetNumPatchPoints(uint16_t level)
     {
         return m_subpatchTrees[m_treeOffset + NumPatchPointsOffset + level];
     }

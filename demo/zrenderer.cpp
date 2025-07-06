@@ -47,9 +47,8 @@ using namespace donut::math;
 #include "rtxmg/profiler/statistics.h"
 #include "rtxmg/scene/camera.h"
 
-ZRenderer::ZRenderer(std::shared_ptr<engine::ShaderFactory> shaderFactory,
-    std::shared_ptr<engine::DescriptorTableManager> descriptorTable)
-    : m_shaderFactory(shaderFactory), m_descriptorTable(descriptorTable)
+ZRenderer::ZRenderer(std::shared_ptr<engine::ShaderFactory> shaderFactory)
+    : m_shaderFactory(shaderFactory)
 {
 
 }

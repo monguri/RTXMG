@@ -5,7 +5,7 @@ struct ClusterTiling
     uint16_t2 tilingSize;   // number of tiles in x and y direction
     uint16_t2  clusterSize;  // number of quads in x and y direction inside tile
 
-    inline uint32_t ClusterCount() { return tilingSize.x * tilingSize.y; }
+    inline uint32_t ClusterCount() { return uint32_t(tilingSize.x) * uint32_t(tilingSize.y); }
     inline uint32_t ClusterVertexCount() { return (clusterSize.x + 1) * (clusterSize.y + 1); }
     inline uint32_t VertexCount() { return ClusterVertexCount() * ClusterCount(); }
 
@@ -61,9 +61,6 @@ struct SurfaceTiling
     }
 };
 
-// Largest edge m_size supported.
-static const int s_maxClusterEdgeSegments = 11;
-
 inline SurfaceTiling MakeSurfaceTiling(uint16_t2 surfaceSize)
 {
     SurfaceTiling ret;
@@ -77,7 +74,7 @@ inline SurfaceTiling MakeSurfaceTiling(uint16_t2 surfaceSize)
         modCluster = uint16_t2((uint16_t)(surfaceSize.x % targetEdgeSegments),
             (uint16_t)(surfaceSize.y % targetEdgeSegments));
 
-        uint32_t maxEdgeSegments = s_maxClusterEdgeSegments;
+        uint32_t maxEdgeSegments = kMaxClusterEdgeSegments;
         if (divClusters.x > 0 && modCluster.x + targetEdgeSegments <= maxEdgeSegments)
         {
             divClusters.x -= 1;

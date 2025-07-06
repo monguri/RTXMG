@@ -105,6 +105,8 @@ private:
     bool m_dumpDebugBuffer = false;
     bool m_dumpPixelDebug = false;
 
+    std::array<int, 3> m_debugSurfaceClusterLaneIndex = { -1, -1, -1 };
+
     // DLSS State
 #if DONUT_WITH_STREAMLINE
     using StreamlineInterface = donut::app::StreamlineInterface;
@@ -162,7 +164,7 @@ public:
     void Render(nvrhi::IFramebuffer* framebuffer) override;
 
 public:
-    RTXMGDemoApp(donut::app::DeviceManager* deviceManager, int argc,
+    RTXMGDemoApp(donut::app::DeviceManager* deviceManager, std::string &windowTitle, int argc,
         const char** argv);
     virtual ~RTXMGDemoApp();
 
@@ -193,6 +195,7 @@ public:
     void SaveScreenshot();
     void DumpDebugBuffer();
     void ReloadShaders() { m_reloadShaders = true; }
+    void RebuildAS() { m_accelBuilderNeedsUpdate = true; }
 
     TessellatorConfig::MemorySettings GetTessMemSettings() const { return m_args.tessMemorySettings; }
     void SetTessMemSettings(const TessellatorConfig::MemorySettings& settings);
@@ -208,6 +211,9 @@ public:
 
     int GetIsolationLevelSharp() const { return m_args.isoLevelSharp; }
     int GetIsolationLevelSmooth() const { return m_args.isoLevelSmooth; }
+    
+    void SetGlobalIsolationLevel(uint32_t isolationLevel);
+    uint32_t GetGlobalIsolationLevel() const { return m_renderParams.isolationLevel; }
 
     TessellatorConfig::VisibilityMode GetTessellatorVisibilityMode() const { return m_args.visMode; }
     void                              SetTessellatorVisibilityMode(TessellatorConfig::VisibilityMode visMode);
@@ -238,6 +244,8 @@ public:
 
     bool GetAccelBuildLoggingEnabled() const { return m_args.enableAccelBuildLogging; }
     void SetAccelBuildLoggingEnabled(bool enabled) { m_args.enableAccelBuildLogging = enabled; }
+
+    std::array<int, 3>& GetDebugSurfaceClusterLaneIndex() { return m_debugSurfaceClusterLaneIndex; }
 
     // Desired denoiser mode
     void SetDenoiserMode(DenoiserMode denoiserMode);

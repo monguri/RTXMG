@@ -539,6 +539,12 @@ void UserInterface::BuildUIMain(int2 screenLayoutSize)
             ImGui::SetTooltip("Dump Debug Buffer.");
 
         ImGui::SameLine();
+        ImGui::Checkbox("Monolithic ClusterBuild", &uiData.enableMonolithicClusterBuild);
+        if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
+            ImGui::SetTooltip(
+                "Use a single shader for compute cluster tiling and fill clusters.\n"
+                "Instead of splitting the dispatches by surface type");
+
         bool accelBuildLoggingEnabled = m_app.GetAccelBuildLoggingEnabled();
         if (ImGui::Checkbox("AS Log", &accelBuildLoggingEnabled))
         {
@@ -547,6 +553,7 @@ void UserInterface::BuildUIMain(int2 screenLayoutSize)
         if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
             ImGui::SetTooltip("Log accel build buffers (Syncs GPU, Slow!)");
 
+        ImGui::SameLine();
         ImGui::Checkbox("Build AS", &uiData.forceRebuildAccelStruct);
         if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
             ImGui::SetTooltip(
@@ -554,16 +561,29 @@ void UserInterface::BuildUIMain(int2 screenLayoutSize)
                 "Disable to freeze tessellation and move the camera around.\n"
                 "Animation will always force a rebuild.");
 
-        ImGui::SameLine();
-        ImGui::Checkbox("Monolithic ClusterBuild", &uiData.enableMonolithicClusterBuild);
-        if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
-            ImGui::SetTooltip(
-                "Use a single shader for compute cluster tiling and fill clusters.\n"
-                "Instead of splitting the dispatches by surface type");
+        if (!uiData.forceRebuildAccelStruct)
+        {
+            ImGui::SameLine();
+            if (ImGui::Button("Build AS Once"))
+            {
+                m_app.RebuildAS();
+            }
+            if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
+                ImGui::SetTooltip("Force rebuild-AS one time, useful for debug logging.");
+        }
 
-#if ENABLE_PIXEL_DEBUG
+#if ENABLE_SHADER_DEBUG
         int2& debugPixel = renderer.GetDebugPixel();
         ImGui::InputInt2("DebugPixel (Right-click)", debugPixel.data());
+                
+        if (ImGui::InputInt3("Tessellator Debug (Surface, Cluster, Lane)", m_app.GetDebugSurfaceClusterLaneIndex().data()))
+        {
+            m_app.RebuildAS();
+        }
+        if (ImGui::IsItemHovered() &&
+            ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
+            ImGui::SetTooltip("Set surface >=0 and lane >=0 to debug compute cluster tiling.\n"
+                "Set cluster >=0 and lane >=0 to debug fill clusters.\n");
 #endif
     }
 #endif
@@ -822,19 +842,29 @@ void UserInterface::BuildUIMain(int2 screenLayoutSize)
                 "  length of the control cage edges scaled by their distance to the\n"
                 "  camera location.\n");
 
+        
+        if (ImGuiComboFromArray("Visibility Mode", &visMode, kVisibilityModeNames))
         {
-            if (ImGuiComboFromArray("Visibility Mode", &visMode, kVisibilityModeNames))
-            {
-                m_app.SetTessellatorVisibilityMode(visMode);
-            }
-            if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
-                ImGui::SetTooltip(
-                    "Tessellation visibility predicates:\n\n"
-                    "- Surface 1-Ring: uses the 1-ring control cage of a surface to derive\n"
-                    "  visibility for an entire surface\n\n"
-                    "- Limit edge: generates visibility predicate for each limit edge a\n"
-                    "  surface only.\n");
+            m_app.SetTessellatorVisibilityMode(visMode);
         }
+        if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
+            ImGui::SetTooltip(
+                "Tessellation visibility predicates:\n\n"
+                "- Surface 1-Ring: uses the 1-ring control cage of a surface to derive\n"
+                "  visibility for an entire surface\n\n"
+                "- Limit edge: generates visibility predicate for each limit edge a\n"
+                "  surface only.\n");
+       
+        int isolationLevel = m_app.GetGlobalIsolationLevel();
+        if (ImGui::SliderInt("Global Isolation Level", &isolationLevel, 1, 6))
+        {
+            m_app.SetGlobalIsolationLevel(uint32_t(isolationLevel));
+        }
+        if (ImGui::IsItemHovered() && ImGui::GetCurrentContext()->HoveredIdTimer > .5f)
+            ImGui::SetTooltip("Global isolation level for all meshes.\n"
+                "- Needs to be >= the highest finite sharpness, but the default of 6 is sufficient.\n"
+                "- Finite sharpness is any sharpness < 10.0f.\n"
+                "- Infinite sharpness = 10.0f has an optimization that doesn't require isolation\n");
 
         float displacementScale = m_app.GetDisplacementScale();
         if (ImGui::SliderFloat("Displacement Scale", &displacementScale, 0.0f, 3.0f))

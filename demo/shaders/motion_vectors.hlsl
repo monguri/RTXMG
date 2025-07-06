@@ -21,6 +21,8 @@
 */
 #pragma pack_matrix(row_major)
 
+#include "rtxmg/utils/shader_debug.h"
+
 #include <donut/shaders/bindless.h>
 #include <donut/shaders/binding_helpers.hlsli>
 
@@ -30,8 +32,6 @@
 
 #include "rtxmg/cluster_builder/displacement.hlsli"
 #include "rtxmg/subdivision/subdivision_eval.hlsli"
-
-#include "pixel_debug.h"
 
 // MVEC_DISPLACEMENT
 #define MVEC_DISPLACEMENT_FROM_SUBD_EVAL 0
@@ -51,21 +51,21 @@ StructuredBuffer<GeometryData>      t_GeometryData          : register(t4);
 StructuredBuffer<MaterialConstants> t_MaterialConstants     : register(t5);
 
 
-RWTexture2D<float2>                 u_MotionVectors         : register(u0);
+VK_IMAGE_FORMAT_UNKNOWN RWTexture2D<float2>                 u_MotionVectors         : register(u0);
 
-#if ENABLE_PIXEL_DEBUG
-RWStructuredBuffer<PixelDebugElement> u_PixelDebug          : register(u1);
+#if ENABLE_SHADER_DEBUG
+RWStructuredBuffer<ShaderDebugElement> u_PixelDebug          : register(u1);
 #endif
 
 
-VK_BINDING(0, 1) ByteAddressBuffer t_BindlessBuffers[]  : register(t0, space1);
-VK_BINDING(1, 1) Texture2D t_BindlessTextures[]         : register(t0, space2);
 
 SamplerState                        s_DisplacementSampler : register(s0);
+
 
 static DynamicSubdivisionEvaluatorHLSL MakeDynamicSubdivisionEvaluator(SubdInstance subdInstance, uint32_t surfaceIndex)
 {
     DynamicSubdivisionEvaluatorHLSL result;
+
     result.m_plans = ResourceDescriptorHeap[NonUniformResourceIndex(subdInstance.plansBindlessIndex)];
     result.m_stencilMatrix = ResourceDescriptorHeap[NonUniformResourceIndex(subdInstance.stencilMatrixBindlessIndex)];
     result.m_subpatchTrees = ResourceDescriptorHeap[NonUniformResourceIndex(subdInstance.subpatchTreesBindlessIndex)];
@@ -76,7 +76,7 @@ static DynamicSubdivisionEvaluatorHLSL MakeDynamicSubdivisionEvaluator(SubdInsta
     result.m_vertexControlPointsPrev = ResourceDescriptorHeap[NonUniformResourceIndex(subdInstance.positionsPrevBindlessIndex)];
 
     result.m_surfaceIndex = surfaceIndex;
-    result.m_isolationLevel = uint16_t(subdInstance.isolationLevel);
+    result.m_isolationLevel = uint16_t(g_RenderParams.isolationLevel);
     return result;
 }
 
@@ -92,7 +92,7 @@ void main(uint3 threadIdx : SV_DispatchThreadID)
     if (any(idx >= uint2(g_RenderParams.camera.dims)))
         return;
 
-    PIXEL_DEBUG_INIT(u_PixelDebug, g_RenderParams.debugPixel, idx, true);
+    SHADER_DEBUG_INIT(u_PixelDebug, g_RenderParams.debugPixel, idx);
 
     const HitResult hit = t_HitResult[idx.y * g_RenderParams.camera.dims.x + idx.x];
 
@@ -133,8 +133,7 @@ void main(uint3 threadIdx : SV_DispatchThreadID)
         {
             // Resample displacement from texture and apply to prev frame limit surface
             // If tess rates vary then there can be a mismatch with the current frame hit point.
-            LimitFrame limitPrev;
-            subd.EvaluatePrev(hit.surfaceUV, limitPrev);
+            LimitFrame limitPrev = subd.EvaluatePrev(hit.surfaceUV);
 
             float3 displacementVec = 0.f;
 
@@ -148,9 +147,9 @@ void main(uint3 threadIdx : SV_DispatchThreadID)
             GetDisplacement(material, g_RenderParams.globalDisplacementScale, displacementTexIndex, displacementScale);
             if (displacementTexIndex >= 0)
             {
-                Texture2D displacementTex = t_BindlessTextures[NonUniformResourceIndex(displacementTexIndex)];
+                Texture2D<float> displacementTex = ResourceDescriptorHeap[NonUniformResourceIndex(displacementTexIndex)];
 
-                float displacement = displacementTex.SampleLevel(s_DisplacementSampler, hit.texcoord, 0).r * displacementScale;
+                float displacement = displacementTex.SampleLevel(s_DisplacementSampler, hit.texcoord, 0) * displacementScale;
                 float3 normal = normalize(cross(limitPrev.deriv1, limitPrev.deriv2));
                 displacementVec = displacement * normal;
             }
@@ -163,7 +162,7 @@ void main(uint3 threadIdx : SV_DispatchThreadID)
             // Compute displacement using the delta between gbuffer hit point and subd limit point
             // Expensive since it re-evalutes limit surface again, but compensates for tess rates
             LimitFrame limit, limitPrev;
-            subd.Evaluate(hit.surfaceUV, limit, limitPrev);
+            subd.Evaluate(limit, limitPrev, hit.surfaceUV);
 
             float3 displacementVec = TransformPoint(Pw, subdInstance.worldToLocal) - limit.p;
 

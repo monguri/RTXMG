@@ -43,6 +43,9 @@ struct TessellationCounters
     uint32_t desiredTriangles;
     uint32_t desiredClasBlocks;
 
+    // Pad for vulkan minStorageBufferOffsetAlignment = 16
+    uint32_t pad[3];
+
 #ifdef __cplusplus
     size_t DesiredClasBytes() const { return size_t(desiredClasBlocks) * nvrhi::rt::cluster::kClasByteAlignment; }
 #endif

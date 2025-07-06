@@ -38,6 +38,7 @@
 
 #include "rtxmg/scene/model.h"
 #include "rtxmg/utils/buffer.h"
+#include "rtxmg/utils/shader_debug.h"
 
 #include <donut/engine/CommonRenderPasses.h>
 #include <donut/engine/ShaderFactory.h>
@@ -203,7 +204,7 @@ public:
     void BuildAccel(const RTXMGScene& scene, const TessellatorConfig& config, 
         ClusterAccels& accels, ClusterStatistics& stats, uint32_t frameIndex, nvrhi::ICommandList* commandList);
     
-    RTXMGBuffer<float4> GetDebugBuffer() const { return m_debugBuffer; }
+    RTXMGBuffer<ShaderDebugElement>& GetDebugBuffer() { return m_debugBuffer; }
 
 protected:
     void UpdateMemoryAllocations(ClusterAccels& accels, uint32_t numInstances, uint32_t sceneSubdPatches);
@@ -221,16 +222,11 @@ protected:
     // Calculates the cluster layout based off of various visibility metrics
     // A cluster tiling is the number of clusters and cluster sizes that are used to cover a surface.
     // Outputs cluster headers, shading data, and addresses
-    void ComputeInstanceClusterTiling(uint32_t instanceIndex,
-        const SubdivisionSurface& subdivisionSurface,
-        ClusterAccels& accels,
-        uint32_t firstGeometryIndex,
-        nvrhi::IBuffer* geometryBuffer,
-        nvrhi::IBuffer* materialBuffer,
-        nvrhi::ISampler* displacementSampler,
-        const donut::math::affine3& localToWorld,
+    void ComputeInstanceClusterTiling(ClusterAccels& accels,
+        const RTXMGScene& scene,
+        uint32_t instanceIndex,
         uint32_t surfaceOffset,
-        uint32_t surfaceCount, 
+        uint32_t surfaceCount,
         const nvrhi::BufferRange& tessCounterRange,
         nvrhi::ICommandList* commandList);
     void CopyClusterOffset(uint32_t instanceIndex, ClusterDispatchType dispatchType,
@@ -248,6 +244,8 @@ protected:
     uint32_t m_buildAccelFrameIndex = 0; // substition for frameIndex since we don't necessarily build every frame
 
     // Pipeline descs
+    nvrhi::BindingLayoutHandle m_bindlessBL;
+
     nvrhi::BindingLayoutHandle m_fillInstantiateTemplateBL;
     nvrhi::ComputePipelineHandle m_fillInstantiateTemplatePSO;
 
@@ -258,13 +256,11 @@ protected:
     nvrhi::ComputePipelineHandle m_copyClusterOffsetPSO;
 
     nvrhi::BindingLayoutHandle m_fillClustersBL;
-    nvrhi::BindingLayoutHandle m_fillClustersBindlessBL;
     nvrhi::ComputePipelineHandle m_fillClustersPSOs[FillClustersPermutation::kCount];
     nvrhi::ComputePipelineHandle m_fillClustersTexcoordsPSO;
 
     nvrhi::BindingLayoutHandle m_computeClusterTilingBL;
     nvrhi::BindingLayoutHandle m_computeClusterTilingHizBL;
-    nvrhi::BindingLayoutHandle m_computeClusterTilingBindlessBL;
     nvrhi::ComputePipelineHandle m_computeClusterTilingPSOs[ComputeClusterTilingPermutation::kCount];
     
     RTXMGBuffer<uint3> m_fillClustersDispatchIndirectBuffer; // number of thread groups per each instance
@@ -303,5 +299,5 @@ protected:
     nvrhi::BufferHandle m_fillClustersParamsBuffer; // constant buffer for fill clusters
     nvrhi::BufferHandle m_fillBlasFromClasArgsParamsBuffer; // constant buffer for filling indirect args to initialize blas from clas
 
-    RTXMGBuffer<float4> m_debugBuffer;
+    RTXMGBuffer<ShaderDebugElement> m_debugBuffer;
 };

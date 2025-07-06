@@ -22,6 +22,8 @@
 
 #include <nvrhi/nvrhiHLSL.h>
 
+#include "rtxmg/utils/shader_debug.h"
+
 #include <donut/shaders/bindless.h>
 #include <donut/shaders/binding_helpers.hlsli>
 
@@ -77,11 +79,10 @@ StructuredBuffer<float2> t_TexCoords : register(t19);
 // Buffers for the gatherer
 RWStructuredBuffer<float3> u_ClusterVertexPositions : register(u0);
 RWStructuredBuffer<ClusterShadingData> u_ClusterShadingData : register(u1);
-RWStructuredBuffer<float4> u_Debug : register(u2);
+RWStructuredBuffer<ShaderDebugElement> u_Debug : register(u2);
 
 SamplerState s_DisplacementSampler : register(s0);
 
-VK_BINDING(1, 1) Texture2D t_BindlessTextures[] : register(t0, space2);
 
 ConstantBuffer<FillClustersParams> g_TessParams : register(b0);
 
@@ -95,11 +96,11 @@ void GathererWriteTexcoord(TexCoordLimitFrame texcoord, uint32_t clusterIndex, u
     u_ClusterShadingData[clusterIndex].m_texcoords[cornerIndex] = texcoord.uv;
 }
 
-[numthreads(32, kFillClustersVerticesWaves, 1)]
+[numthreads(kFillClustersVerticesLanes * kFillClustersVerticesWaves, 1, 1)]
 void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
 {
-    uint32_t iLane = threadIdx.x;
-    uint32_t iWave = threadIdx.y;
+    uint32_t iLane = threadIdx.x % kFillClustersVerticesLanes;
+    uint32_t iWave = threadIdx.x / kFillClustersVerticesLanes;
     const uint32_t groupClusterIndex = groupIdx.x * kFillClustersVerticesWaves + iWave;
 
 #if SURFACE_TYPE == SURFACE_TYPE_ALL
@@ -117,13 +118,17 @@ void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_Gr
         return; // early out waves beyond cluster array end
 
     uint32_t clusterIndex = groupClusterIndex + offsetCount.x;
+
+    SHADER_DEBUG_INIT(u_Debug, uint2(g_TessParams.debugClusterIndex, g_TessParams.debugLaneIndex), uint2(clusterIndex, iLane));
+
     const Cluster rCluster = t_Clusters[clusterIndex];
     const uint32_t iSurface = rCluster.iSurface;
     const GridSampler rSampler = t_GridSamplers[iSurface];
 
     SubdivisionEvaluatorHLSL subd;
     subd.m_surfaceIndex = iSurface;
-    subd.m_isolationLevel = (uint16_t)g_TessParams.isolationLevel;
+
+    subd.m_isolationLevel = uint16_t(g_TessParams.isolationLevel);
     subd.m_surfaceDescriptors = t_VertexSurfaceDescriptors;
     subd.m_plans = t_Plans;
     subd.m_subpatchTrees = t_SubpatchTrees;
@@ -151,7 +156,6 @@ void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_Gr
     MaterialConstants material = t_MaterialConstants[geometry.materialIndex];
 
     GetDisplacement(material, g_TessParams.globalDisplacementScale, displacementTexIndex, displacementScale);
-    Texture2D displacementTex = t_BindlessTextures[displacementTexIndex];
 #endif
 
 #if SURFACE_TYPE == SURFACE_TYPE_PUREBSPLINE && ENABLE_GROUP_PUREBSPLINE
@@ -160,7 +164,7 @@ void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_Gr
 
     {
         // wave wide loop
-        for (uint16_t pointIndex = (uint16_t)iLane; pointIndex < rCluster.VerticesPerCluster(); pointIndex += 32)
+        for (uint16_t pointIndex = (uint16_t)iLane; pointIndex < rCluster.VerticesPerCluster(); pointIndex += kFillClustersVerticesLanes)
         {
             float2 uv = rSampler.UV(rCluster.Linear2Idx2D(pointIndex) + rCluster.offset, (ClusterPattern)g_TessParams.clusterPattern);
 
@@ -180,10 +184,14 @@ void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_Gr
 #endif
 
 #if DISPLACEMENT_MAPS
-            limit = DoDisplacement(texcoordEval,
+            if (displacementTexIndex >= 0)
+            {
+                Texture2D<float> displacementTexture = ResourceDescriptorHeap[NonUniformResourceIndex(displacementTexIndex)];
+                limit = DoDisplacement(texcoordEval,
                         limit, iSurface, uv,
-                        displacementTex,
+                        displacementTexture,
                         s_DisplacementSampler, displacementScale);
+            }
 #endif
 
             GathererWriteLimit(limit, rCluster, pointIndex);
@@ -191,10 +199,12 @@ void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_Gr
     }
 }
 
-[numthreads(kFillClustersTexcoordsThreadsX, 4, 1)]
+[numthreads(kFillClustersTexcoordsThreadsX * 4, 1, 1)]
 void FillClustersTexcoordsMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
 {
-    const uint32_t groupClusterIndex = groupIdx.x * kFillClustersTexcoordsThreadsX + threadIdx.x;
+    const uint32_t clusterThreadIdx = threadIdx.x % kFillClustersTexcoordsThreadsX;
+    const uint32_t cornerIdx = threadIdx.x / kFillClustersTexcoordsThreadsX;
+    const uint32_t groupClusterIndex = groupIdx.x * kFillClustersTexcoordsThreadsX + clusterThreadIdx;
     uint2 offsetCount = t_ClusterOffsetCounts[g_TessParams.instanceIndex * ClusterDispatchType::NumTypes + ClusterDispatchType::All];
     if (groupClusterIndex >= offsetCount.y)
         return; // early out waves beyond cluster array end
@@ -219,7 +229,7 @@ void FillClustersTexcoordsMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupId
     texcoordEval.m_texcoordPatchPoints = t_TexCoordPatchPoints;
     texcoordEval.m_texcoordControlPoints = t_TexCoords;
 
-    TexCoordLimitFrame texcoord = texcoordEval.EvaluateLinearSubd(kSurfaceUVs[threadIdx.y], iSurface);
+    TexCoordLimitFrame texcoord = texcoordEval.EvaluateLinearSubd(kSurfaceUVs[cornerIdx], iSurface);
 
-    GathererWriteTexcoord(texcoord, clusterIndex, threadIdx.y);
+    GathererWriteTexcoord(texcoord, clusterIndex, cornerIdx);
 }

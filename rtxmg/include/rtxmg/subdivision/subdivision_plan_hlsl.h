@@ -36,6 +36,9 @@
 #include "rtxmg/subdivision/osd_ports/tmr/subdivisionNode.h"
 #include "patch_param.h"
 
+enum class SingleCreaseDynamicIsolation : uint16_t { SHARP = 0, SMOOTH = 1, };
+static const SingleCreaseDynamicIsolation kSingleCreaseDynamicIsolation = SingleCreaseDynamicIsolation::SMOOTH;
+static const float kMinFloat = 1.17549435e-38f;
 // translators for Tmr => Far types
 inline PatchDescriptorType
 RegularBasisType(SchemeType scheme)
@@ -568,13 +571,14 @@ inline void EvaluatePatchBasis(PatchDescriptorType patchType,
 
 struct SubdivisionPlanHLSL
 {
+    static const SchemeType kScheme = SCHEME_CATMARK;
+    static const EndCapType kEndCap = ENDCAP_BSPLINE_BASIS;
+
+    // scheme, endcap used to be dynamically defined
+    SchemeType GetScheme() { return kScheme; }
+    EndCapType GetEndCap() { return kEndCap; }
+
     uint16_t numControlPoints;
-
-    // note: schemes & end-cap maths should not be dynamic conditional paths in
-    // the run-time kernels, so both of these should be moved out of this struct
-    SchemeType scheme;
-    EndCapType endCap;
-
     uint16_t coarseFaceSize;
     int16_t  coarseFaceQuadrant;  // locates a surface within a non-quad parent face
 
@@ -589,9 +593,40 @@ struct SubdivisionPlanHLSL
     // - rows contain a stencil of weights for each patch point
     uint32_t stencilMatrixOffset; // index into m_stencilMatrix
     uint32_t stencilMatrixSize; // size of elements in m_stencilMatrix
+
+    // member variables are not referenced (see GetScheme(), GetEndCap()) but are left in here
+    // in case the caller wants to implement a dynamic path
+    SchemeType scheme;
+    EndCapType endCap;
 };
 
 #ifndef __cplusplus
+
+float
+computeSingleCreaseSharpness(SubdivisionNode n, NodeDescriptor desc, uint16_t depth, uint16_t level)
+{
+    if (kSingleCreaseDynamicIsolation == SingleCreaseDynamicIsolation::SHARP)
+    {
+        return desc.HasSharpness() ? n.GetSharpness() : 0.0f;
+    }
+    else if (kSingleCreaseDynamicIsolation == SingleCreaseDynamicIsolation::SMOOTH)
+    {
+        if (desc.HasSharpness())
+        {
+            float sharpness = n.GetSharpness();
+            
+            // single-crease patches require a non-null boundary mask and sharpness > 0.f
+            // std::numeric_limits::min() ensures EvalBasisBSpline() evaluates the crease
+            // matrix
+            return max(kMinFloat, min(sharpness, float(level) - float(depth)));
+        }
+        return 0.f;
+    }
+
+    // Impossible path
+    return 0.f;
+}
+
 struct SubdivisionPlanContext
 {
     SubdivisionPlanHLSL m_data;
@@ -608,7 +643,7 @@ struct SubdivisionPlanContext
         return treeDescriptor;
     }
 
-    bool IsBSplinePatch(int level)
+    bool IsBSplinePatch(uint16_t level)
     {
         return GetTreeDescriptor().GetNumPatchPoints(level) == 0;
     }
@@ -640,7 +675,7 @@ struct SubdivisionPlanContext
             {
                 break;
             }
-            switch (m_data.scheme)
+            switch (m_data.GetScheme())
             {
             case SCHEME_CATMARK:
                 TraverseCatmark(uv.x, uv.y, quadrant);
@@ -664,8 +699,8 @@ struct SubdivisionPlanContext
 
     SubdivisionNode EvaluateBasis(float2 st, out float wP[16], out float wDs[16], out float wDt[16], out uint16_t subpatch, uint16_t level)
     {
-        PatchDescriptorType regularBasis = RegularBasisType(m_data.scheme);
-        PatchDescriptorType irregularBasis = IrregularBasisType(m_data.scheme, m_data.endCap);
+        PatchDescriptorType regularBasis = RegularBasisType(m_data.GetScheme());
+        PatchDescriptorType irregularBasis = IrregularBasisType(m_data.GetScheme(), m_data.GetEndCap());
 
         bool isIrregular = !(GetTreeDescriptor().IsRegularFace());
 
@@ -696,7 +731,7 @@ struct SubdivisionPlanContext
             {
             case NODE_REGULAR:
             {
-                float sharpness = desc.HasSharpness() ? node.GetSharpness() : 0.f;
+                float sharpness = computeSingleCreaseSharpness(node, desc, depth, level);
                 EvaluatePatchBasis(regularBasis, param, st, wP, wDs, wDt, sharpness);
                 break;
             }

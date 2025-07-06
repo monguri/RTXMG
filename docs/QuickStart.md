@@ -4,7 +4,7 @@ See [README](../README.md) for cloning & build steps.
 
 ## Path-tracer sample
 
-This sample uses NVAPI cluster template extensions (RTXMG) to handle very large 
+This sample uses NVAPI cluster template extensions (RTX MG) to handle very large 
 updates to the ray-tracing acceleration structure (BVH).
 
 This enables real-time path-tracing of subdivision surfaces with displacement 
@@ -31,7 +31,7 @@ be detected on the next launch of the application.
 ![](./images/scene_loading.png)
 
 > [!TIPS]
-> The application will attempt to locate a media folder named ‘assets’; if
+> The application will attempt to locate a folder named ‘assets’; if
 > unsuccessful, the path to the folder will be blank and the ‘Scene’ pull-down
 > menu will remain empty.
 

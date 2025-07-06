@@ -83,5 +83,8 @@ public:
         return float2(0.f, 0.f);
     }
     nvrhi::ITexture* GetHierarchyTexture(uint32_t level) const { return m_hierarchy->GetTextureObject(level); }
-    static nvrhi::BindingSetDesc GetHiZDesc(const ZBuffer* zbuffer, nvrhi::ITexture* defaultTex, bool writeable = false);
+    void GetHiZDesc(nvrhi::BindingLayoutDesc* outBindingLayout, nvrhi::BindingSetDesc* outBindingSet) const
+    { 
+        m_hierarchy->GetDesc(outBindingLayout, outBindingSet, false);
+    }
 };

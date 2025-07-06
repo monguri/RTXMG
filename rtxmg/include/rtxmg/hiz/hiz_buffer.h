@@ -65,7 +65,7 @@ public:
     // (starting from a small offset at the bottom left corner)
     void Display(nvrhi::ITexture* output, nvrhi::ICommandList* commandList);
     
-    nvrhi::BindingSetDesc GetDesc(bool writeable = false) const;
+    void GetDesc(nvrhi::BindingLayoutDesc* outBindingLayout, nvrhi::BindingSetDesc* outBindingSet, bool writeable = false) const;
 
     uint32_t GetNumLevels() const { return m_numLODs; }
     float2 GetInvSize() const { return m_invSize; }
@@ -91,8 +91,4 @@ private:
 
     nvrhi::BufferHandle m_reduceParamsBuffer;
     nvrhi::BufferHandle m_displayParamsBuffer;
-
-    RTXMGBuffer<float4> m_debugBuffer;
-    nvrhi::BindingSetHandle m_debugBS;
-    nvrhi::BindingLayoutHandle m_debugBL;
 };

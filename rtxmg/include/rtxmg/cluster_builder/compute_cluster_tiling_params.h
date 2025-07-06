@@ -37,7 +37,8 @@ struct ComputeClusterTilingParams
 {
     uint32_t surfaceStart; //inclusive
     uint32_t surfaceEnd; //exclusive
-    uint2 pad0;
+    uint32_t debugSurfaceIndex;
+    uint32_t debugLaneIndex;
     
     float4x4 matWorldToClip;
     float3x4 localToWorld;
@@ -71,8 +72,8 @@ struct ComputeClusterTilingParams
     nvrhi::GpuVirtualAddress clusterVertexPositionsBaseAddress;
 };
 
-#ifdef __cplusplus
+#if defined(__cplusplus)
 static_assert(sizeof(ComputeClusterTilingParams) % 16 == 0);
-#else
+#elif defined(TARGET_D3D12)
 _Static_assert(sizeof(ComputeClusterTilingParams) % 16 == 0, "Must be 16 byte aligned");
 #endif

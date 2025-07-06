@@ -23,17 +23,12 @@
 #include "rtxmg/hiz/hiz_buffer_reduce_params.h"
 #include "rtxmg/hiz/hiz_buffer_constants.h"
 
-#include "rtxmg/utils/debug.h"
-
 Texture2D<float> t_zbuffer: register(t0);
 StructuredBuffer<HiZReducePass1Params> g_params: register(t1);
 RWTexture2D<float> u_output[HIZ_MAX_LODS]: register(u0);
-RWStructuredBuffer<float4> u_Debug: register(u0, space1);
 
 groupshared float s_reductionData[HIZ_GROUP_SIZE][HIZ_GROUP_SIZE];
 SamplerState s : register(s0);
-
-static uint32_t g_debugOutputSlot = 0;
 
 inline float Reduce(float a, float b)
 {

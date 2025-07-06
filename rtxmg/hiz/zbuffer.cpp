@@ -172,19 +172,3 @@ void ZBuffer::Clear(nvrhi::ICommandList* commandList)
         m_hierarchy->Clear(commandList);
     }
 }
-
-nvrhi::BindingSetDesc ZBuffer::GetHiZDesc(const ZBuffer* zbuffer, nvrhi::ITexture* defaultTex, bool writeable)
-{
-    if (zbuffer && zbuffer->m_hierarchy)
-    {
-        return zbuffer->m_hierarchy->GetDesc(writeable);
-    }
-
-    // if we Get here, you can't write to the hi-z buffer, so returning SRV is fine.
-    auto ret = nvrhi::BindingSetDesc();
-    for (uint32_t i = 0; i < HIZ_MAX_LODS; i++)
-    {
-        ret.addItem(nvrhi::BindingSetItem::Texture_SRV(i, defaultTex));
-    }
-    return ret;
-}

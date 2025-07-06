@@ -150,6 +150,12 @@ void Args::Parse(int argc, char const* const* argv)
     {
         const std::string arg(argv[i]);
 
+        if (arg == "-d3d12" || arg == "-dx12" || arg == "--d3d12" || arg == "--dx12")
+            continue;
+        
+        if (arg == "-vk" || arg == "-vulkan" || arg == "--vk" || arg == "--vulkan")
+            continue;
+
         auto parseArgValues = [&argc, &argv, &i, &arg](int n,
             std::function<void()> func)
             {

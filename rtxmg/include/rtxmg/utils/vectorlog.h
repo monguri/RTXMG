@@ -83,25 +83,27 @@ namespace vectorlog
     }
 
 
-    static void EndLine(std::stringstream& ss, bool inlineLog)
+    static void EndLine(std::stringstream& ss, std::ostream* optOutputStream)
     {
-        if (inlineLog)
+        if (optOutputStream)
+        {
+            (*optOutputStream) << ss.str() << std::endl;
+        }
+        else
         {
             donut::log::info(ss.str().c_str());
             ss.str("");
             ss.clear();
         }
-        else
-        {
-            ss << std::endl;
-        }
     }
 
     template<typename T>
-    static void OutputStream(const std::vector<T>& data, std::stringstream& ss, typename OutputLambda<T>::Type outputElementLambda, bool inlineLog, const FormatOptions &options)
+    static void OutputStream(const std::vector<T>& data, typename OutputLambda<T>::Type outputElementLambda, std::ostream* optOutputStream, const FormatOptions &options)
     {
         if (options.startIndex >= data.size())
             return;
+
+        std::stringstream ss;
 
         auto begin = data.begin();
         auto iter = begin + options.startIndex;
@@ -130,7 +132,7 @@ namespace vectorlog
                 std::ostream::pos_type currentLength = ss.tellp() - startLength;
                 if (currentLength > 80u)
                 {
-                    EndLine(ss, inlineLog);
+                    EndLine(ss, optOutputStream);
                     startLength = ss.tellp();
                 }
                 else
@@ -144,7 +146,7 @@ namespace vectorlog
             std::ostream::pos_type currentLength = ss.tellp() - startLength;
             if (currentLength > 0u)
             {
-                EndLine(ss, inlineLog);
+                EndLine(ss, optOutputStream);
                 startLength = ss.tellp();
             }
         }
@@ -155,7 +157,7 @@ namespace vectorlog
             {
                 outputIndex(iter - begin);
                 continueOutput = outputElementLambda(ss, *iter++);
-                EndLine(ss, inlineLog);
+                EndLine(ss, optOutputStream);
             }
         }
     }
@@ -163,15 +165,13 @@ namespace vectorlog
     template<typename T>
     static void Log(const std::vector<T>& data, typename OutputLambda<T>::Type outputElementLambda, FormatOptions options = {})
     {
-        std::stringstream ss;
-        OutputStream(data, ss, outputElementLambda, true, options);
+        OutputStream(data, outputElementLambda, nullptr, options);
     }
 
     template<typename T>
     static void Log(const std::vector<T>& data, FormatOptions options = {})
     {
-        std::stringstream ss;
-        OutputStream(data, ss, vectorlog::OutputElement<T>, true, options);
+        OutputStream(data, vectorlog::OutputElement<T>, nullptr, options);
     }
 }
 

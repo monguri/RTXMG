@@ -165,8 +165,6 @@ struct UIData
 {
     bool showUI = true;
 
-    static const char* WindowTitle;
-
     // path to imgui.ini settings file (auto-saved by imgui)
     std::string iniFilepath;
 
@@ -200,7 +198,7 @@ struct UIData
     bool showLodInspector = false;
     bool forceRebuildAccelStruct = true;
     bool enableMonolithicClusterBuild = false;
-
+    
     TimeLineEditorState timeLineEditorState;
 
     std::shared_ptr<donut::engine::LoadedTexture> envmap = nullptr;

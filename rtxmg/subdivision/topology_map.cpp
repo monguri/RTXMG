@@ -75,7 +75,7 @@ void TopologyMap::InitDeviceData(std::shared_ptr<donut::engine::DescriptorTableM
     for (auto planIndex = 0; planIndex < numPlans; ++planIndex)
     {
         SubdivisionPlanHLSL& gpuPlan = gpuPlans[planIndex];
-
+        // Data is set in the plan, but shader code references hardcodes these
         gpuPlan.scheme = (SchemeType)schemeType;
         gpuPlan.endCap = (EndCapType)endcapType;
 

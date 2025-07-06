@@ -1,7 +1,6 @@
-
 cmake_minimum_required(VERSION 3.10)
 
-project(rtxmg LANGUAGES C CXX VERSION 0.9.2)
+project(rtxmg LANGUAGES C CXX VERSION 1.0.0)
 
 set(CMAKE_CONFIGURATION_TYPES "Debug;Release;RelWithDebInfo;ReleaseAsan" CACHE STRING "Configurations" FORCE)
 set(CMAKE_CXX_STANDARD 23)
@@ -46,14 +45,14 @@ endif()
 # DXC
 # WindowsSDK version is buggy and the compiler crashes
 ####################################
-include("${PROJECT_SOURCE_DIR}/CMake/FetchDXC.cmake")
+set(SHADERMAKE_FIND_DXC ON CACHE BOOL "" FORCE)
 
 ####################################
 # Streamline
 ####################################
 set(DONUT_WITH_STREAMLINE ON CACHE BOOL "" FORCE)
-set(DONUT_STREAMLINE_FETCH_URL "https://github.com/NVIDIAGameWorks/Streamline.git" CACHE STRING "")
-set(DONUT_STREAMLINE_FETCH_TAG "v2.7.2" CACHE STRING "")
+set(DONUT_STREAMLINE_FETCH_URL "https://github.com/NVIDIA-RTX/Streamline/releases/download/v2.8.0/streamline-sdk-v2.8.0.zip" CACHE STRING "")
+set(DONUT_STREAMLINE_FETCH_SHA256 "313669f8cf886f823ea0518a50712efa5e2e8623689ed2a6bd0d9353e475bc47" CACHE STRING "")
 set(STREAMLINE_FEATURE_DLSS_SR ON CACHE BOOL "" FORCE)
 set(STREAMLINE_FEATURE_DLSS_RR ON CACHE BOOL "" FORCE)
 set(STREAMLINE_INSTALL_DIR "bin" CACHE STRING "" FORCE)
@@ -67,7 +66,7 @@ include("${PROJECT_SOURCE_DIR}/CMake/FetchNVAPI.cmake")
 # DONUT
 ####################################
 option(DONUT_WITH_DX11 OFF)
-option(DONUT_WITH_VULKAN OFF "Enable the Vulkan version of Donut")
+set(DONUT_WITH_VULKAN ON CACHE BOOL "Enable the Vulkan version of Donut")
 set(NVRHI_WITH_NVAPI ON CACHE BOOL "" FORCE)
 set(DONUT_WITH_AFTERMATH ON CACHE BOOL "" FORCE)
 set(NVRHI_INSTALL OFF CACHE BOOL "" FORCE)
@@ -84,7 +83,12 @@ list(APPEND RTXMG_SHADERS_INCLUDE_DIR
 "${nvapi_SOURCE_DIR}"
 "${PROJECT_SOURCE_DIR}/extern/donut/nvrhi/include")
 
-set(RTXMG_SHADERMAKE_OPTIONS_DXIL "--embedPDB --hlsl2021")
+set(RTXMG_SHADERMAKE_OPTIONS "--embedPDB --hlsl2021")
+
+#-vd disable validator due to a bug in 
+# https://github.com/microsoft/DirectXShaderCompiler/issues/7181
+# should be fixed in version 1.8.2505
+set(RTXMG_SHADERMAKE_OPTIONS_SPIRV "--vulkanMemoryLayout scalar --compilerOptions -Vd") 
 set(RTXMG_SHADERS_SHADERMODEL "6_6")
 
 set(RTXMG_SHADERS_IGNORED_INCLUDES "")
@@ -97,6 +101,7 @@ list(APPEND RTXMG_SHADERS_IGNORED_INCLUDES
     "cstdio"
     "stdio.h"
     "cmath"
+    "ostream"
     "rtxmg/utils/buffer.h"
 )
 

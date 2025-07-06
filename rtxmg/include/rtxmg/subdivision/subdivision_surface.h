@@ -54,10 +54,6 @@ public:
     uint32_t NumVertices() const;
     uint32_t SurfaceCount() const;
 
-    // see Tmr::SubdivisionPlanBuilder::Options for details on dynamic adaptive
-    // isolation (currently not supported in our Tmr Tessellators)
-    int m_dynamicIsolationLevel = 6;
-
     // AABBs are in object-space !
     std::vector<box3> m_aabbKeyframes;
     box3 m_aabb;
