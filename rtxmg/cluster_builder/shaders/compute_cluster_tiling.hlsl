@@ -331,13 +331,16 @@ float CalculateEdgeVisibility(uint32_t iLane, uint32_t waveSampleOffset, float v
             float3 t0 = samples[waveSampleOffset + (iLane * 2 + i) % kNumWaveSurfaceUVSamples].deriv1;
             float3 t1 = samples[waveSampleOffset + (iLane * 2 + i) % kNumWaveSurfaceUVSamples].deriv2;
             float3 nobj = cross(t0, t1);
-            float3 nworld = normalize(mul(g_Params.localToWorld, float4(nobj, 0.f)).xyz);
+            const float kEpsilon = 1e-6f;
+            if (dot(nobj, nobj) > kEpsilon * kEpsilon)
+            {
+                float3 nworld = normalize(mul(g_Params.localToWorld, float4(nobj, 0.f)).xyz);
 
-            float cosTheta = dot(normalize(pworld[i] - g_Params.cameraPos), nworld);
+                float cosTheta = dot(normalize(pworld[i] - g_Params.cameraPos), nworld);
+                float backfaceFactor = smoothstep(.6f, 1.f, cosTheta);
 
-            float backfaceFactor = smoothstep(.6f, 1.f, cosTheta);
-
-            visibility *= (1.f - backfaceFactor);
+                visibility *= (1.f - backfaceFactor);
+            }            
         }
     }
     return visibility;
