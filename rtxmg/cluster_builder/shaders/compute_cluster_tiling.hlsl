@@ -157,7 +157,7 @@ bool HiZIsVisible(Box3 aabb)
     return true;
 }
 
-float FrustumVisibility(SubdivisionEvaluatorHLSL subd, uint3 threadIdx)
+float FrustumVisibility(SubdivisionEvaluatorHLSL subd, uint iLane)
 {
     SurfaceDescriptor desc = subd.GetSurfaceDesc();
     uint32_t numControlPoints = subd.GetPlan().m_data.numControlPoints;
@@ -171,7 +171,7 @@ float FrustumVisibility(SubdivisionEvaluatorHLSL subd, uint3 threadIdx)
     // bit 4: behind eye
     uint signBits = 0xFF;
 
-    for (uint32_t i = threadIdx.x; i < numControlPoints; i += 32)
+    for (uint32_t i = iLane; i < numControlPoints; i += kComputeClusterTilingLanes)
     {
         Index index = subd.m_vertexControlPointIndices[desc.firstControlPoint + i];
         float3 cp = subd.m_vertexControlPoints[index];
@@ -210,7 +210,7 @@ float FrustumVisibility(SubdivisionEvaluatorHLSL subd, uint3 threadIdx)
     }
 
     // butterfly reduction of AABB across lanes
-    for (int i = 16; i >= 1; i /= 2)
+    for (int i = (kComputeClusterTilingLanes/2); i >= 1; i /= 2)
     {
         uint targetLane = WaveGetLaneIndex() ^ i;
         aabb.m_min.x = min(aabb.m_min.x, WaveReadLaneAt(aabb.m_min.x, targetLane));
@@ -223,7 +223,7 @@ float FrustumVisibility(SubdivisionEvaluatorHLSL subd, uint3 threadIdx)
     }
 
 
-    if (threadIdx.x == 0 && aabb.Valid())
+    if (iLane == 0 && aabb.Valid())
     {
         aabb.m_min.x = clamp(aabb.m_min.x, 0.f, g_Params.viewportSize.x);
         aabb.m_max.x = clamp(aabb.m_max.x, 0.f, g_Params.viewportSize.x);
@@ -238,13 +238,13 @@ float FrustumVisibility(SubdivisionEvaluatorHLSL subd, uint3 threadIdx)
     return (float)surfaceVisible;
 }
 
-float CalculateVisibility(SubdivisionEvaluatorHLSL subd, uint3 threadIdx)
+float CalculateVisibility(SubdivisionEvaluatorHLSL subd, uint iLane)
 {
     float visibility = 1.0; // fully visible
 #if VIS_MODE == VIS_MODE_SURFACE
     if (g_Params.enableFrustumVisibility)
     {
-        visibility = FrustumVisibility(subd, threadIdx);
+        visibility = FrustumVisibility(subd, iLane);
     }
 #elif VIS_MODE == VIS_MODE_LIMIT_EDGES
     // for edge visibility, all the work IsBSplinePatch done below int `calculateEdgeVisibility`
@@ -755,7 +755,7 @@ void main(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
     texcoordEval.WaveEvaluateTexCoordPatchPoints(iLane, iSurface);
 
     // Frustum "culling"
-    float visibility = CalculateVisibility(subd, threadIdx);
+    float visibility = CalculateVisibility(subd, iLane);
 
     // -------------------------------------------------------------------------
     // Evaluate corner and mid points for surface quad
