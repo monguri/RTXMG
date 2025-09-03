@@ -339,6 +339,12 @@ GetGeometryFromHit(RayPayload payload)
     gs.vertexNormals[2] = t_ClusterVertexNormals[globalVtxIndices[2]];
 #endif
 
+
+    // Use this for a stable cluster ID
+    uint linearClusterOffset = (clusterShadingData.m_clusterOffset.y * clusterShadingData.m_clusterSizeX) + clusterShadingData.m_clusterOffset.x;
+    SHADER_DEBUG(uint2(clusterShadingData.m_surfaceId, linearClusterOffset));
+    SHADER_DEBUG(localVtxIndices);
+
     // Texcoords
     // Bilinear texcoords
     float2 uvs[3];
@@ -347,8 +353,6 @@ GetGeometryFromHit(RayPayload payload)
 
     gs.surfaceUV = uv;
     gs.surfaceIndex = clusterShadingData.m_surfaceId;
-
-    SHADER_DEBUG(gs.surfaceIndex);
 
     // bilerp from 4 corner attributes
     const float u = uv.x;

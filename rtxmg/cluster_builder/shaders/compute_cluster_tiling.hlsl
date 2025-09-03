@@ -517,16 +517,8 @@ void WriteSurfaceWave(uint32_t iWave, uint32_t iLane, uint32_t iSurface, GridSam
         u_GridSamplers[iSurface] = rSampler;
     }
 
-    SHADER_DEBUG(uint4(rSampler.edgeSegments));
-
     uint16_t2 surfaceSize = rSampler.GridSize();
     SurfaceTiling surfaceTiling = MakeSurfaceTiling(surfaceSize);
-
-    [unroll]
-    for (uint32_t i = 0; i < 4; i++)
-    {
-        SHADER_DEBUG(uint4(surfaceTiling.subTilings[i].tilingSize, surfaceTiling.subTilings[i].clusterSize));
-    }
 
     uint32_t clusterCount = 0;
     uint32_t vertexCount = 0;

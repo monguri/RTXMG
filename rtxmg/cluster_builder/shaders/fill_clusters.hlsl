@@ -130,10 +130,14 @@ void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_Gr
         return; // early out waves beyond cluster array end
 
     uint32_t clusterIndex = groupClusterIndex + offsetCount.x;
-
-    SHADER_DEBUG_INIT(u_Debug, uint2(g_TessParams.debugClusterIndex, g_TessParams.debugLaneIndex), uint2(clusterIndex, iLane));
-
     const Cluster rCluster = t_Clusters[clusterIndex];
+
+    // Shader debug only
+    uint surfaceIndex = rCluster.iSurface;
+    uint linearClusterOffset = (rCluster.offset.y * rCluster.sizeX) + rCluster.offset.x;
+
+    SHADER_DEBUG_INIT(u_Debug, uint3(g_TessParams.debugSurfaceIndex, g_TessParams.debugClusterIndex, g_TessParams.debugLaneIndex), uint3(surfaceIndex, linearClusterOffset, iLane));
+    
     const uint32_t iSurface = rCluster.iSurface;
     const GridSampler rSampler = t_GridSamplers[iSurface];
 

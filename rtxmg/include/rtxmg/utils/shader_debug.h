@@ -101,8 +101,8 @@ struct ShaderDebugElement
 struct ShaderDebugger
 {
     RWStructuredBuffer<ShaderDebugElement> output;
-    uint2 predicateID;
-    uint2 currentID;
+    uint3 predicateID;
+    uint3 currentID;
 
     uint AllocateSlot()
     {
@@ -119,7 +119,7 @@ struct ShaderDebugger
     {
         if (all(predicateID == currentID))
         {
-            ShaderDebugElement element;
+            ShaderDebugElement element = (ShaderDebugElement)0;
             element.payloadType = payloadType;
             element.lineNumber = lineNumber;
             element.floatData = value;
@@ -131,7 +131,7 @@ struct ShaderDebugger
     {
         if (all(predicateID == currentID))
         {
-            ShaderDebugElement element;
+            ShaderDebugElement element = (ShaderDebugElement)0;
             element.payloadType = payloadType;
             element.lineNumber = lineNumber;
             element.floatData = 0.f;
@@ -194,11 +194,21 @@ struct ShaderDebugger
 
 static ShaderDebugger g_ShaderDebugger;
 
-static void InitShaderDebugger(RWStructuredBuffer<ShaderDebugElement> output, uint2 predicateID, uint2 currentID)
+static void InitShaderDebugger(RWStructuredBuffer<ShaderDebugElement> output, uint3 predicateID, uint3 currentID)
 {
     g_ShaderDebugger.output = output;
     g_ShaderDebugger.predicateID = predicateID;
     g_ShaderDebugger.currentID = currentID;
+}
+
+static void InitShaderDebugger(RWStructuredBuffer<ShaderDebugElement> output, uint2 predicateID, uint2 currentID)
+{
+    InitShaderDebugger(output, uint3(predicateID, 0), uint3(currentID, 0));
+}
+
+static void InitShaderDebugger(RWStructuredBuffer<ShaderDebugElement> output, uint predicateID, uint currentID)
+{
+    InitShaderDebugger(output, uint3(predicateID, 0, 0), uint3(currentID, 0, 0));
 }
 
 #define SHADER_DEBUG(value) g_ShaderDebugger.ShaderDebug(value, __LINE__)

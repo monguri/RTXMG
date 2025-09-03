@@ -75,7 +75,7 @@ ClusterAccelBuilder::ClusterAccelBuilder(donut::engine::ShaderFactory& shaderFac
     , m_device(device)
 {
     m_tessellationCountersBuffer.Create(kFrameCount, "tesselation counters", m_device);
-    m_debugBuffer.Create(64, "ClusterAccelDebug", m_device);
+    m_debugBuffer.Create(512, "ClusterAccelDebug", m_device);
         
     //////////////////////////////////////////////////
     // Parameter buffers for shaders
@@ -619,12 +619,7 @@ void ClusterAccelBuilder::BuildStructuredCLASes(ClusterAccels& accels, uint32_t 
 }
 
 void ClusterAccelBuilder::FillInstanceClusters(const RTXMGScene& scene, ClusterAccels& accels, nvrhi::ICommandList* commandList)
-{
-    if (m_tessellatorConfig.hasValidDebugIndex())
-    {
-        commandList->clearBufferUInt(m_debugBuffer, 0);
-    }
-    
+{    
     const auto& subdMeshes = scene.GetSubdMeshes();
     const auto& instances = scene.GetSubdMeshInstances();
 
@@ -644,6 +639,13 @@ void ClusterAccelBuilder::FillInstanceClusters(const RTXMGScene& scene, ClusterA
         
         const uint32_t surfaceCount = subd.SurfaceCount();
 
+        if (m_tessellatorConfig.debugSurfaceIndex >= 0 &&
+            m_tessellatorConfig.debugClusterIndex >= 0 &&
+            m_tessellatorConfig.debugLaneIndex >= 0)
+        {
+            commandList->clearBufferUInt(m_debugBuffer, 0);
+        }
+
         FillClustersParams params = {};
         params.instanceIndex = instanceIndex;
         params.quantNBits = m_tessellatorConfig.quantNBits;
@@ -651,6 +653,7 @@ void ClusterAccelBuilder::FillInstanceClusters(const RTXMGScene& scene, ClusterA
         params.globalDisplacementScale = m_tessellatorConfig.displacementScale;
         params.clusterPattern = uint32_t(m_tessellatorConfig.clusterPattern);
         params.firstGeometryIndex = firstGeometryIndex;
+        params.debugSurfaceIndex = uint32_t(m_tessellatorConfig.debugSurfaceIndex);
         params.debugClusterIndex = uint32_t(m_tessellatorConfig.debugClusterIndex);
         params.debugLaneIndex = uint32_t(m_tessellatorConfig.debugLaneIndex);
         commandList->writeBuffer(m_fillClustersParamsBuffer, &params, sizeof(FillClustersParams));
@@ -757,15 +760,18 @@ void ClusterAccelBuilder::FillInstanceClusters(const RTXMGScene& scene, ClusterA
         commandList->dispatchIndirect(dispatchIndirectArgsOffset);
 
         surfaceOffset += surfaceCount;
+
+        if (m_tessellatorConfig.debugSurfaceIndex >= 0 &&
+            m_tessellatorConfig.debugClusterIndex >= 0 &&
+            m_tessellatorConfig.debugLaneIndex >= 0)
+        {
+            donut::log::info("Fill Clusters Debug Instance:%d Mesh:%s (Surface:%u Cluster:%u Lane:%u)", instanceIndex, donutMeshInfo->name.c_str(), m_tessellatorConfig.debugSurfaceIndex,
+                m_tessellatorConfig.debugClusterIndex, m_tessellatorConfig.debugLaneIndex);
+            m_debugBuffer.Log(commandList, ShaderDebugElement::OutputLambda, { .wrap = false, .header = false, .elementIndex = false, .startIndex = 1 });
+        }
     }
 
     stats::clusterAccelSamplers.fillClustersTime.Stop();
-
-    if (m_tessellatorConfig.hasValidDebugIndex())
-    {
-        donut::log::info("Fill clusters Debug");
-        m_debugBuffer.Log(commandList, ShaderDebugElement::OutputLambda, { .wrap = false, .header = false, .elementIndex = false, .startIndex = 1 });
-    }
 }
 
 void ClusterAccelBuilder::ComputeInstanceClusterTiling(ClusterAccels& accels, 
@@ -788,7 +794,8 @@ void ClusterAccelBuilder::ComputeInstanceClusterTiling(ClusterAccels& accels,
     uint32_t firstGeometryIndex = donutMeshInfo->geometries[0]->globalGeometryIndex;
     const donut::math::affine3& localToWorld = instance.localToWorld;
 
-    if (m_tessellatorConfig.hasValidDebugIndex())
+    if (m_tessellatorConfig.debugSurfaceIndex >= 0 &&
+        m_tessellatorConfig.debugLaneIndex >= 0)
     {
         commandList->clearBufferUInt(m_debugBuffer, 0);
     }
@@ -971,9 +978,10 @@ void ClusterAccelBuilder::ComputeInstanceClusterTiling(ClusterAccels& accels,
         }
     }
 
-    if (m_tessellatorConfig.hasValidDebugIndex())
+    if (m_tessellatorConfig.debugSurfaceIndex >= 0 &&
+        m_tessellatorConfig.debugLaneIndex >= 0)
     {
-        donut::log::info("Cluster Tiling Debug Instance:%d Mesh:%s", instanceIndex, donutMeshInfo->name.c_str());
+        donut::log::info("Cluster Tiling Debug Instance:%d Mesh:%s (Surface:%d, Lane:%d)", instanceIndex, donutMeshInfo->name.c_str(), m_tessellatorConfig.debugSurfaceIndex, m_tessellatorConfig.debugLaneIndex);
         m_debugBuffer.Log(commandList, ShaderDebugElement::OutputLambda, { .wrap = false, .header = false, .elementIndex = false, .startIndex = 1 });
     }
 
