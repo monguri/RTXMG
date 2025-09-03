@@ -199,8 +199,12 @@ void FillClustersMain(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_Gr
             if (displacementTexIndex >= 0)
             {
                 Texture2D<float> displacementTexture = ResourceDescriptorHeap[NonUniformResourceIndex(displacementTexIndex)];
+
+                float du = rSampler.DU(uv);
+                float dv = rSampler.DV(uv);
+                
                 limit = DoDisplacement(texcoordEval,
-                        limit, iSurface, uv,
+                        limit, iSurface, uv, du, dv,
                         displacementTexture,
                         s_DisplacementSampler, displacementScale);
             }

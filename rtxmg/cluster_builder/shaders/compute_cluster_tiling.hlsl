@@ -416,7 +416,7 @@ void WaveEvaluateBSplinePatch8(uint32_t iWave,
     {
         Texture2D<float> displacementTexture = ResourceDescriptorHeap[NonUniformResourceIndex(displacementTexIndex)];
         LimitFrame displaced = DoDisplacement(texcoordEval,
-            samples[waveSampleOffset + iLane], subd.m_surfaceIndex, kWaveSurfaceUVSamples[iLane],
+            samples[waveSampleOffset + iLane], subd.m_surfaceIndex, kWaveSurfaceUVSamples[iLane], 0, 0,
             displacementTexture,
             s_DisplacementSampler, displacementScale);
         samples[waveSampleOffset + iLane] = displaced;
