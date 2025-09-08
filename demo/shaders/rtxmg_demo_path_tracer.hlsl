@@ -366,6 +366,12 @@ GetGeometryFromHit(RayPayload payload)
     return gs;
 }
 
+// Blinking function that returns true for "on" state based on subframe index
+bool GetBlinkState(uint subFrameIndex, uint blinkPeriod = 60)
+{
+    return (subFrameIndex / blinkPeriod) % 2 == 0;
+}
+
 void GetClipPoints(out float3 outClipPoints[3], in GeometrySample gs)
 {
     float3 worldSpacePositions[3];
@@ -507,9 +513,32 @@ MaterialSample RTXMG_EvaluateSceneMaterial(GeometrySample gs, float3 normal, Mat
     }
     else if (colorMode == ColorMode::COLOR_BY_SURFACE_INDEX)
     {
-        float3 hashedColor = UintToColor(gs.surfaceIndex);
-        result.baseColor = hashedColor;
-        result.diffuseAlbedo = hashedColor;
+        if (g_RenderParams.debugSurfaceIndex >= 0)
+        {
+            // Highlighting mode enabled
+            if (gs.surfaceIndex == (uint)g_RenderParams.debugSurfaceIndex)
+            {
+                // This is the highlighted surface - blink between red and dark gray
+                bool blinkOn = GetBlinkState(g_RenderParams.subFrameIndex);
+                float3 highlightColor = blinkOn ? float3(1.0, 0.0, 0.0) : float3(0.1, 0.1, 0.1);
+                result.baseColor = highlightColor;
+                result.diffuseAlbedo = highlightColor;
+            }
+            else
+            {
+                // All other surfaces are dark gray
+                float3 darkGray = float3(0.1, 0.1, 0.1);
+                result.baseColor = darkGray;
+                result.diffuseAlbedo = darkGray;
+            }
+        }
+        else
+        {
+            // Normal hashed color scheme when no debug surface is selected
+            float3 hashedColor = UintToColor(gs.surfaceIndex);
+            result.baseColor = hashedColor;
+            result.diffuseAlbedo = hashedColor;
+        }
     }
     else if (colorMode == ColorMode::COLOR_BY_CLUSTER_UV)
     {

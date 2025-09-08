@@ -329,6 +329,13 @@ public:
     bool GetDisplayZBuffer() const { return m_displayZBuffer; }
 
     int2& GetDebugPixel() { return m_params.debugPixel; }
+    
+    void SetDebugSurfaceIndex(int surfaceIndex)
+    {
+        m_params.debugSurfaceIndex = surfaceIndex;
+        ResetSubframes(); // Reset accumulation when debug surface changes
+    }
+    int GetDebugSurfaceIndex() const { return m_params.debugSurfaceIndex; }
 
     void SceneFinishedLoading(std::shared_ptr<RTXMGScene> scene);
 

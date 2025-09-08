@@ -115,9 +115,9 @@ struct ShaderDebugger
         return (result % maxSize) + 1;
     }
 
-    void _ShaderDebug(float4 value, uint lineNumber, uint payloadType)
+    void _ShaderDebug(float4 value, uint lineNumber, uint payloadType, bool checkPredicate)
     {
-        if (all(predicateID == currentID))
+        if (!checkPredicate || all(predicateID == currentID))
         {
             ShaderDebugElement element = (ShaderDebugElement)0;
             element.payloadType = payloadType;
@@ -127,9 +127,9 @@ struct ShaderDebugger
             output[AllocateSlot()] = element;
         }
     }
-    void _ShaderDebug(uint4 value, uint lineNumber, uint payloadType)
+    void _ShaderDebug(uint4 value, uint lineNumber, uint payloadType, bool checkPredicate)
     {
-        if (all(predicateID == currentID))
+        if (!checkPredicate || all(predicateID == currentID))
         {
             ShaderDebugElement element = (ShaderDebugElement)0;
             element.payloadType = payloadType;
@@ -140,55 +140,55 @@ struct ShaderDebugger
         }
     }
 
-    void ShaderDebug(uint4 value, uint lineNumber)
+    void ShaderDebug(uint4 value, uint lineNumber, bool checkPredicate = true)
     {
-        _ShaderDebug(value, lineNumber, ShaderDebugElement::PayloadType_Uint4);
+        _ShaderDebug(value, lineNumber, ShaderDebugElement::PayloadType_Uint4, checkPredicate);
     }
-    void ShaderDebug(uint3 value, uint lineNumber)
+    void ShaderDebug(uint3 value, uint lineNumber, bool checkPredicate = true)
     {
-        _ShaderDebug(uint4(value, 0), lineNumber, ShaderDebugElement::PayloadType_Uint3);
+        _ShaderDebug(uint4(value, 0), lineNumber, ShaderDebugElement::PayloadType_Uint3, checkPredicate);
     }
-    void ShaderDebug(uint2 value, uint lineNumber)
+    void ShaderDebug(uint2 value, uint lineNumber, bool checkPredicate = true)
     {
-        _ShaderDebug(uint4(value, 0, 0), lineNumber, ShaderDebugElement::PayloadType_Uint2);
+        _ShaderDebug(uint4(value, 0, 0), lineNumber, ShaderDebugElement::PayloadType_Uint2, checkPredicate);
     }
-    void ShaderDebug(uint value, uint lineNumber)
+    void ShaderDebug(uint value, uint lineNumber, bool checkPredicate = true)
     {
-        _ShaderDebug(uint4(value, 0, 0, 0), lineNumber, ShaderDebugElement::PayloadType_Uint);
-    }
-
-    void ShaderDebug(int4 value, uint lineNumber)
-    {
-        _ShaderDebug(value, lineNumber, ShaderDebugElement::PayloadType_Int4);
-    }
-    void ShaderDebug(int3 value, uint lineNumber)
-    {
-        _ShaderDebug(uint4(value, 0), lineNumber, ShaderDebugElement::PayloadType_Int3);
-    }
-    void ShaderDebug(int2 value, uint lineNumber)
-    {
-        _ShaderDebug(uint4(value, 0, 0), lineNumber, ShaderDebugElement::PayloadType_Int2);
-    }
-    void ShaderDebug(int value, uint lineNumber)
-    {
-        _ShaderDebug(uint4(value, 0, 0, 0), lineNumber, ShaderDebugElement::PayloadType_Int);
+        _ShaderDebug(uint4(value, 0, 0, 0), lineNumber, ShaderDebugElement::PayloadType_Uint, checkPredicate);
     }
 
-    void ShaderDebug(float4 value, uint lineNumber)
+    void ShaderDebug(int4 value, uint lineNumber, bool checkPredicate = true)
     {
-        _ShaderDebug(value, lineNumber, ShaderDebugElement::PayloadType_Float4);
+        _ShaderDebug(value, lineNumber, ShaderDebugElement::PayloadType_Int4, checkPredicate);
     }
-    void ShaderDebug(float3 value, uint lineNumber)
+    void ShaderDebug(int3 value, uint lineNumber, bool checkPredicate = true)
     {
-        _ShaderDebug(float4(value, 0), lineNumber, ShaderDebugElement::PayloadType_Float3);
+        _ShaderDebug(uint4(value, 0), lineNumber, ShaderDebugElement::PayloadType_Int3, checkPredicate);
     }
-    void ShaderDebug(float2 value, uint lineNumber)
+    void ShaderDebug(int2 value, uint lineNumber, bool checkPredicate = true)
     {
-        _ShaderDebug(float4(value, 0, 0), lineNumber, ShaderDebugElement::PayloadType_Float2);
+        _ShaderDebug(uint4(value, 0, 0), lineNumber, ShaderDebugElement::PayloadType_Int2, checkPredicate);
     }
-    void ShaderDebug(float value, uint lineNumber)
+    void ShaderDebug(int value, uint lineNumber, bool checkPredicate = true)
     {
-        _ShaderDebug(float4(value, 0, 0, 0), lineNumber, ShaderDebugElement::PayloadType_Float);
+        _ShaderDebug(uint4(value, 0, 0, 0), lineNumber, ShaderDebugElement::PayloadType_Int, checkPredicate);
+    }
+
+    void ShaderDebug(float4 value, uint lineNumber, bool checkPredicate = true)
+    {
+        _ShaderDebug(value, lineNumber, ShaderDebugElement::PayloadType_Float4, checkPredicate);
+    }
+    void ShaderDebug(float3 value, uint lineNumber, bool checkPredicate = true)
+    {
+        _ShaderDebug(float4(value, 0), lineNumber, ShaderDebugElement::PayloadType_Float3, checkPredicate);
+    }
+    void ShaderDebug(float2 value, uint lineNumber, bool checkPredicate = true)
+    {
+        _ShaderDebug(float4(value, 0, 0), lineNumber, ShaderDebugElement::PayloadType_Float2, checkPredicate);
+    }
+    void ShaderDebug(float value, uint lineNumber, bool checkPredicate = true)
+    {
+        _ShaderDebug(float4(value, 0, 0, 0), lineNumber, ShaderDebugElement::PayloadType_Float, checkPredicate);
     }
 };
 
@@ -212,10 +212,12 @@ static void InitShaderDebugger(RWStructuredBuffer<ShaderDebugElement> output, ui
 }
 
 #define SHADER_DEBUG(value) g_ShaderDebugger.ShaderDebug(value, __LINE__)
+#define SHADER_DEBUG_FORCE(value) g_ShaderDebugger.ShaderDebug(value, __LINE__, false)
 #define SHADER_DEBUG_INIT(outputBuffer, predicateID, currentID) InitShaderDebugger(outputBuffer, predicateID, currentID)
 
 #else
 #define SHADER_DEBUG(value) 
+#define SHADER_DEBUG_FORCE(value)
 #define SHADER_DEBUG_INIT(outputBuffer, predicateID, currentID)
 #endif
 

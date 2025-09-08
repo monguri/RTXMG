@@ -578,6 +578,8 @@ void UserInterface::BuildUIMain(int2 screenLayoutSize)
                 
         if (ImGui::InputInt3("Tessellator Debug (Surface, Cluster, Lane)", m_app.GetDebugSurfaceClusterLaneIndex().data()))
         {
+            // Update renderer's debug surface index for highlighting
+            renderer.SetDebugSurfaceIndex(m_app.GetDebugSurfaceClusterLaneIndex()[0]);
             m_app.RebuildAS();
         }
         if (ImGui::IsItemHovered() &&

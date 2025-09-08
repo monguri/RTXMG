@@ -140,6 +140,7 @@ void RTXMGDemoApp::UpdateParams()
     m_renderParams.hasEnvironmentMap = 0;
     m_renderParams.enableEnvmapHeatmap = 0;
     m_renderParams.debugPixel = int2(0, 0);
+    m_renderParams.debugSurfaceIndex = m_debugSurfaceClusterLaneIndex[0]; // Initialize from GUI variable
 
     if (m_renderer)
     {
@@ -163,6 +164,7 @@ void RTXMGDemoApp::UpdateParams()
         GetRenderer().SetColorMode(m_args.colorMode);
         GetRenderer().SetTonemapOperator(m_args.tonemapOperator);
         GetRenderer().SetExposure(m_args.exposure);
+        GetRenderer().SetDebugSurfaceIndex(m_debugSurfaceClusterLaneIndex[0]); // Initialize debug surface highlighting
     }
 }
 

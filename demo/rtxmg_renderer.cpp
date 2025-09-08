@@ -1162,10 +1162,18 @@ void RTXMGRenderer::UpdateAccelerationStructures(const TessellatorConfig &tessCo
 void RTXMGRenderer::DumpPixelDebugBuffers(nvrhi::ICommandList* commandList)
 {
 #if ENABLE_SHADER_DEBUG
-    log::info("Raytracing Pixel Debug: %d, %d", m_params.debugPixel.x, m_params.debugPixel.y);
-    m_pixelDebugBuffer.Log(commandList, ShaderDebugElement::OutputLambda, { .wrap = false, .header = false, .elementIndex = false, .startIndex = 1 });
+    {
+        log::info("Raytracing Pixel Debug: %d, %d", m_params.debugPixel.x, m_params.debugPixel.y);
+        auto debugOutput = m_pixelDebugBuffer.Download(commandList);
+        uint numElements = debugOutput.front().payloadType;
+        vectorlog::Log(debugOutput, ShaderDebugElement::OutputLambda, vectorlog::FormatOptions{ .wrap = false, .header = false, .elementIndex = false, .startIndex = 1, .count = numElements });
+    }
     
-    log::info("Motion Vector Pixel Debug: %d, %d", m_params.debugPixel.x, m_params.debugPixel.y);
-    m_motionVectorsPixelDebugBuffer.Log(commandList, ShaderDebugElement::OutputLambda, { .wrap = false, .header = false, .elementIndex = false, .startIndex = 1 });
+    {
+        log::info("Motion Vector Pixel Debug: %d, %d", m_params.debugPixel.x, m_params.debugPixel.y);
+        auto debugOutput = m_motionVectorsPixelDebugBuffer.Download(commandList);
+        uint numElements = debugOutput.front().payloadType;
+        vectorlog::Log(debugOutput, ShaderDebugElement::OutputLambda, vectorlog::FormatOptions{ .wrap = false, .header = false, .elementIndex = false, .startIndex = 1, .count = numElements });
+    }
 #endif
 }

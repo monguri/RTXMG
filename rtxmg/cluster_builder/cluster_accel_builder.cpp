@@ -767,7 +767,10 @@ void ClusterAccelBuilder::FillInstanceClusters(const RTXMGScene& scene, ClusterA
         {
             donut::log::info("Fill Clusters Debug Instance:%d Mesh:%s (Surface:%u Cluster:%u Lane:%u)", instanceIndex, donutMeshInfo->name.c_str(), m_tessellatorConfig.debugSurfaceIndex,
                 m_tessellatorConfig.debugClusterIndex, m_tessellatorConfig.debugLaneIndex);
-            m_debugBuffer.Log(commandList, ShaderDebugElement::OutputLambda, { .wrap = false, .header = false, .elementIndex = false, .startIndex = 1 });
+            
+            auto debugOutput = m_debugBuffer.Download(commandList);
+            uint numElements = debugOutput.front().payloadType;
+            vectorlog::Log(debugOutput, ShaderDebugElement::OutputLambda, vectorlog::FormatOptions{ .wrap = false, .header = false, .elementIndex = false, .startIndex = 1, .count = numElements });
         }
     }
 
@@ -982,7 +985,10 @@ void ClusterAccelBuilder::ComputeInstanceClusterTiling(ClusterAccels& accels,
         m_tessellatorConfig.debugLaneIndex >= 0)
     {
         donut::log::info("Cluster Tiling Debug Instance:%d Mesh:%s (Surface:%d, Lane:%d)", instanceIndex, donutMeshInfo->name.c_str(), m_tessellatorConfig.debugSurfaceIndex, m_tessellatorConfig.debugLaneIndex);
-        m_debugBuffer.Log(commandList, ShaderDebugElement::OutputLambda, { .wrap = false, .header = false, .elementIndex = false, .startIndex = 1 });
+
+        auto debugOutput = m_debugBuffer.Download(commandList);
+        uint numElements = debugOutput.front().payloadType;
+        vectorlog::Log(debugOutput, ShaderDebugElement::OutputLambda, vectorlog::FormatOptions{ .wrap = false, .header = false, .elementIndex = false, .startIndex = 1, .count = numElements });
     }
 
     if (m_tessellatorConfig.enableLogging)
