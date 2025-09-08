@@ -63,6 +63,8 @@
 
 static const uint32_t kComputeClusterTilingLanes = 32;
 
+static const float kEpsilon = 1e-6f;
+
 ConstantBuffer<ComputeClusterTilingParams> g_Params : register(b0);
 
 StructuredBuffer<float3> t_VertexControlPoints : register(t0);
@@ -328,14 +330,14 @@ float CalculateEdgeVisibility(uint32_t iLane, uint32_t waveSampleOffset, float v
     {
         for (uint16_t i = 0; i < 3; ++i)
         {
-            float3 t0 = samples[waveSampleOffset + (iLane * 2 + i) % kNumWaveSurfaceUVSamples].deriv1;
-            float3 t1 = samples[waveSampleOffset + (iLane * 2 + i) % kNumWaveSurfaceUVSamples].deriv2;
-            float3 nobj = cross(t0, t1);
-            const float kEpsilon = 1e-6f;
-            if (dot(nobj, nobj) > kEpsilon * kEpsilon)
-            {
-                float3 nworld = normalize(mul(g_Params.localToWorld, float4(nobj, 0.f)).xyz);
+            uint32_t sampleIndex = (iLane * 2 + i) % kNumWaveSurfaceUVSamples;
+            float3 t0 = samples[waveSampleOffset + sampleIndex].deriv1;
+            float3 t1 = samples[waveSampleOffset + sampleIndex].deriv2;
 
+            if (!IsParallel(t0, t1))
+            {
+                float3 nobj = cross(t0, t1);
+                float3 nworld = normalize(mul(g_Params.localToWorld, float4(nobj, 0.f)).xyz);
                 float cosTheta = dot(normalize(pworld[i] - g_Params.cameraPos), nworld);
                 float backfaceFactor = smoothstep(.6f, 1.f, cosTheta);
 
@@ -569,8 +571,6 @@ void WriteSurfaceWave(uint32_t iWave, uint32_t iLane, uint32_t iSurface, GridSam
         }
 #endif
         clusterTris = 2 * (uint32_t)surfaceSize.x * (uint32_t)surfaceSize.y;
-
-        SHADER_DEBUG(uint4(clusterCount, vertexCount, clasBlocks, clusterTris));
     }
 
 #if ENABLE_GROUP_ATOMICS
