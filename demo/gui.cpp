@@ -466,8 +466,21 @@ void UserInterface::BuildUIMain(int2 screenLayoutSize)
             auto folderFilters = uiData.folderFilters();
             auto formatFilters = uiData.formatFilters();
 
+            // Store current asset name before refreshing the map
+            std::string currentAssetName = uiData.currentAsset ? uiData.currentAsset->GetName() : "";
+            
             uiData.mediaAssets = FindMediaAssets(mediapath, folderFilters.data(),
                 formatFilters.data());
+            
+            // Restore current asset selection if it still exists
+            if (!currentAssetName.empty())
+            {
+                uiData.SelectCurrentAsset(currentAssetName);
+            }
+            else
+            {
+                uiData.currentAsset = nullptr;
+            }
         }
 
         char const* currentAssetName =
@@ -494,9 +507,9 @@ void UserInterface::BuildUIMain(int2 screenLayoutSize)
         }
         if (ImGui::IsItemHovered() &&
             ImGui::GetCurrentContext()->HoveredIdTimer > .5f && uiData.currentAsset &&
-            uiData.currentAsset->name)
+            !uiData.currentAsset->name.empty())
         {
-            ImGui::SetTooltip("%s", uiData.currentAsset->name);
+            ImGui::SetTooltip("%s", uiData.currentAsset->GetName());
         }
     }
 
@@ -1641,7 +1654,7 @@ UserInterface::FindMediaAssets(fs::path const& mediapath,
             auto [it, success] =
                 assets.insert({ name.empty() ? rp.generic_string() : name, {} });
             assert(success);
-            it->second.name = it->first.c_str();
+            it->second.name = it->first;
             return it;
         };
 
