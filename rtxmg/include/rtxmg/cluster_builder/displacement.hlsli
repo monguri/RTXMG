@@ -40,10 +40,19 @@ void GetDisplacement(MaterialConstants material,
     }
 }
 
+
+float DisplacementMipLevel(float2 dx, float2 dy) 
+{
+    float d = max(dot(dx, dx), dot(dy, dy));
+    return max(0.5f * log2(d), 0.f);
+}
+
 LimitFrame DoDisplacement(TexcoordEvaluatorHLSL texcoordEval,
     LimitFrame limit,
     uint32_t iSurface,
     float2 uv,
+    float du,
+    float dv,
     Texture2D<float> displacementTex,
     SamplerState dispSampler,
     float scale)
@@ -58,22 +67,25 @@ LimitFrame DoDisplacement(TexcoordEvaluatorHLSL texcoordEval,
     TexCoordLimitFrame texcoord = texcoordEval.EvaluateLinearSubd(uv, iSurface);
     
     // Sample 1 texel 
-    float2 dimensions;
-    displacementTex.GetDimensions(dimensions.x, dimensions.y);
-    float2 dsdt = 1.0f / dimensions;
-    float displacement = scale * displacementTex.SampleLevel(dispSampler, texcoord.uv, 0);
+    float2 gradDu = du * texcoord.deriv1;
+    float2 gradDv = dv * texcoord.deriv2;
+
+    float mipLevel = DisplacementMipLevel(gradDu, gradDv);
+    float displacement = scale * displacementTex.SampleLevel(dispSampler, texcoord.uv, mipLevel);
     
     // compute derivatives of displacement map, (dD/du) and (dD/dv) from finite differences:
-    float2 texcoordDu         = texcoord.uv + dsdt.x * texcoord.deriv1;
-    float2 texcoordDv         = texcoord.uv + dsdt.y * texcoord.deriv2;
+    const float2 delta = float2(max(du, 0.01f), max(dv, 0.01f));
+    float2 texcoordDu = texcoord.uv + delta.x * texcoord.deriv1;
+    float2 texcoordDv = texcoord.uv + delta.y * texcoord.deriv2;
     
-    float displacement1 = scale * displacementTex.SampleLevel(dispSampler, texcoordDu, 0);
-    float displacement2 = scale * displacementTex.SampleLevel(dispSampler, texcoordDv, 0);
-    float  displacementDeriv1 = ( displacement1 - displacement ) / dsdt.x;
-    float  displacementDeriv2 = ( displacement2 - displacement ) / dsdt.y;
-    // compute displaced parital derivates
-    const float3 dpdu = limit.deriv1 + displacementDeriv1 * normal;
-    const float3 dpdv = limit.deriv2 + displacementDeriv2 * normal;
+    float displacement1 = scale * displacementTex.SampleLevel(dispSampler, texcoordDu, mipLevel);
+    float displacement2 = scale * displacementTex.SampleLevel(dispSampler, texcoordDv, mipLevel);
+    float  dDdu = ( displacement1 - displacement ) / delta.x;
+    float  dDdv = ( displacement2 - displacement ) / delta.y;
+    
+    // compute displaced partial derivates
+    const float3 dpdu = limit.deriv1 + dDdu * normal;
+    const float3 dpdv = limit.deriv2 + dDdv * normal;
 
     LimitFrame ret;
     

@@ -127,7 +127,7 @@ public:
         uint32_t frameIndex,
         nvrhi::ICommandList* commandList);
     void ReloadShaders();
-    void BuildOrUpdatePipelines();
+
     void CreateOutputs(nvrhi::ICommandList* commandList);
     void Launch(nvrhi::ICommandList* commandList, uint32_t frameIndex,
         std::shared_ptr<Light> light);
@@ -329,6 +329,13 @@ public:
     bool GetDisplayZBuffer() const { return m_displayZBuffer; }
 
     int2& GetDebugPixel() { return m_params.debugPixel; }
+    
+    void SetDebugSurfaceIndex(int surfaceIndex)
+    {
+        m_params.debugSurfaceIndex = surfaceIndex;
+        ResetSubframes(); // Reset accumulation when debug surface changes
+    }
+    int GetDebugSurfaceIndex() const { return m_params.debugSurfaceIndex; }
 
     void SceneFinishedLoading(std::shared_ptr<RTXMGScene> scene);
 
@@ -369,8 +376,6 @@ private:
 
     nvrhi::IDevice* GetDevice() const { return m_options.device; }
 
-    bool CreateRayTracingPipeline(ShaderFactory& shaderFactory);
-
     void FillInstanceDescs(nvrhi::ICommandList* commandList, nvrhi::IBuffer* outInstanceDescs, nvrhi::IBuffer* blasAddresses, uint32_t numInstances);
 
     void CreateAccelStructs();
@@ -402,8 +407,31 @@ private:
     int2 m_renderSize = int2(0, 0);
     int2 m_displaySize = int2(0, 0);
 
-    nvrhi::rt::PipelineHandle m_rayPipeline;
-    nvrhi::rt::ShaderTableHandle m_shaderTable;
+    // Ray tracing permutation support
+    class RayTracingPermutation
+    {
+    public:
+        enum BitIndices : uint32_t
+        {
+            VertexNormals = 0,
+            Count
+        };
+        static constexpr size_t kCount = 1u << BitIndices::Count;
+        uint32_t index() const { return m_bits; }
+
+        RayTracingPermutation(bool enableVertexNormals)
+            : m_bits((enableVertexNormals ? (1u << BitIndices::VertexNormals) : 0u))
+        {
+        }
+
+        bool isVertexNormalsEnabled() const { return (m_bits & (1u << BitIndices::VertexNormals)) != 0; }
+
+    private:
+        uint32_t m_bits = 0;
+    };
+
+    std::array<nvrhi::rt::PipelineHandle, RayTracingPermutation::kCount> m_rayPipelines = {};
+    std::array<nvrhi::rt::ShaderTableHandle, RayTracingPermutation::kCount> m_shaderTables = {};
     nvrhi::BindingLayoutHandle m_bindingLayout;
     nvrhi::BindingSetHandle m_bindingSet;
     nvrhi::BindingLayoutHandle m_bindlessLayout;
@@ -458,7 +486,7 @@ private:
     std::shared_ptr<TextureCache> m_textureCache;
     std::shared_ptr<RTXMGScene> m_scene;
 
-    nvrhi::ShaderLibraryHandle m_shaderLibrary;
+
 
     std::shared_ptr<ShaderFactory> m_shaderFactory;
     std::shared_ptr<CommonRenderPasses> m_commonPasses;
@@ -466,9 +494,9 @@ private:
     PlanarView m_view;
     PlanarView m_viewPrevious;
 
-    bool m_pipelinesNeedsUpdate = true;
     bool m_needsRebind = true;
     bool m_needsEnvMapUpdate = false;
     bool m_displayZBuffer = false;
+    bool m_enableVertexNormals = false;
     std::unique_ptr<ZBuffer> m_zbuffer;
 };

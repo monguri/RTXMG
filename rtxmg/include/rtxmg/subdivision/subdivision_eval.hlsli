@@ -64,6 +64,22 @@ static const float2 kWaveSurfaceUVSamples[kNumWaveSurfaceUVSamples] =
     { 0, 0.5 }
 };
 
+// A small tolerance for the *sine of the angle* squared
+static const float kParallelEpsilonRadians = 0.001745f; // 0.1 degrees
+
+static const float kParallelCosSquared = (1.0f - kParallelEpsilonRadians * kParallelEpsilonRadians);
+
+bool IsParallel(float3 t0, float3 t1)
+{
+    // cos(theta) = dot(t0, t1) / (|t0| * |t1|)
+    // cos(theta)^2 = dot(t0, t1)^2 / (|t0|^2 * |t1|^2)
+    // cos(theta)^2 > kParallelCosSquared
+    // dot(t0, t1)^2 > kParallelCosSquared * |t0|^2 * |t1|^2
+
+    float dotTangents = dot(t0, t1);
+    return (dotTangents * dotTangents) > kParallelCosSquared * dot(t0, t0) * dot(t1, t1);
+}
+
 struct SubdivisionEvaluatorHLSL
 {
     uint32_t m_surfaceIndex;
@@ -364,6 +380,45 @@ struct SubdivisionEvaluatorHLSL
         }
     }
 #endif
+
+    float3 CalculateLimitFrameNormal(LimitFrame limit)
+    {
+        // Primary method: compute normal from surface derivatives
+        float3 t0 = limit.deriv1;
+        float3 t1 = limit.deriv2;
+        
+        if (!IsParallel(t0, t1))
+        {
+            return normalize(cross(t0, t1));
+        }
+        else
+        {
+            // Fallback: compute normal from the 1-ring of the patch (center 3 points)
+            // Other points on the 2-ring can be zero if they are on a boundary.
+            SurfaceDescriptor desc = GetSurfaceDesc();
+            
+            Index cpi0 = m_vertexControlPointIndices[desc.firstControlPoint + 0];
+            Index cpi1 = m_vertexControlPointIndices[desc.firstControlPoint + 1];
+            Index cpi2 = m_vertexControlPointIndices[desc.firstControlPoint + 2];
+            
+            float3 p0 = m_vertexControlPoints[cpi0];
+            float3 p1 = m_vertexControlPoints[cpi1];
+            float3 p2 = m_vertexControlPoints[cpi2];
+
+            t0 = p1 - p0;
+            t1 = p2 - p0;
+            
+            if (!IsParallel(t0, t1))
+            {
+                return normalize(cross(t0, t1));
+            }
+            else
+            {
+                // Ultimate fallback: use up vector
+                return float3(0, 0, 1);
+            }
+        }
+    }
 };
 
 struct DynamicSubdivisionEvaluatorHLSL : SubdivisionEvaluatorHLSL

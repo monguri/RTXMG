@@ -59,6 +59,11 @@ struct ClusterAccels
     // Vertex Position buffer that we stage into before creating CLASes
     //
     RTXMGBuffer<float3> clusterVertexPositionsBuffer;
+
+    // -------------------------------------------------------------------------
+    // Vertex Normal buffer (optional - only allocated when vertex normals are enabled)
+    //
+    RTXMGBuffer<float3> clusterVertexNormalsBuffer;
 };
 
 struct ClusterStatistics
@@ -70,6 +75,7 @@ struct ClusterStatistics
         size_t m_blasScratchSize = 0;
         size_t m_blasSize = 0;
         size_t m_vertexBufferSize = 0;
+        size_t m_vertexNormalsBufferSize = 0;
         size_t m_clasSize = 0;
         size_t m_clusterDataSize = 0;
     };

@@ -115,6 +115,7 @@ struct Args : SceneArgs
     bool enableBackfaceVisibility = true;
     bool enableHiZVisibility = true;
     bool updateTessCamera = true;
+    bool enableVertexNormals = false;
 
     TessellatorConfig::MemorySettings tessMemorySettings;
     TessellatorConfig::VisibilityMode visMode = TessellatorConfig::VisibilityMode::VIS_LIMIT_EDGES;

@@ -85,6 +85,7 @@ struct TessellatorConfig
     bool  enableBackfaceVisibility = true;
     bool  enableLogging = false; // enable debug logging for tessellator build
     bool  enableMonolithicClusterBuild = false;
+    bool  enableVertexNormals = false; // enable vertex normal computation
 
     uint2            viewportSize = { 0u, 0u };
     uint4            edgeSegments = { 8, 8, 8, 8 };
@@ -100,8 +101,6 @@ struct TessellatorConfig
     int debugSurfaceIndex = 0;
     int debugClusterIndex = 0;
     int debugLaneIndex = 0;
-
-    bool hasValidDebugIndex() const { return debugSurfaceIndex >= 0 && debugLaneIndex >= 0; }
 };
 
 #if __cplusplus

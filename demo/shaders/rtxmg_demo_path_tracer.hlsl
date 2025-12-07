@@ -114,7 +114,10 @@ StructuredBuffer<float> t_EnvMapConditionalFunc: register(t7);
 StructuredBuffer<float> t_EnvMapMarginalFunc : register(t8);
 StructuredBuffer<ClusterShadingData> t_ClusterShadingData : register(t9);
 StructuredBuffer<float3> t_ClusterVertexPositions : register(t10);
-StructuredBuffer<SubdInstance> t_SubdInstances : register(t11);
+#if VERTEX_NORMALS
+StructuredBuffer<float3> t_ClusterVertexNormals : register(t11);
+#endif
+StructuredBuffer<SubdInstance> t_SubdInstances : register(t12);
 
 SamplerState s_MaterialSampler : register(s0);
 
@@ -273,6 +276,7 @@ struct GeometrySample
     MaterialConstants material;
 
     float3 vertexPositions[3];
+    float3 vertexNormals[3];
     float2 vertexTexcoords[3];
 
     float3 barycentrics;
@@ -328,6 +332,19 @@ GetGeometryFromHit(RayPayload payload)
     gs.vertexPositions[1] = t_ClusterVertexPositions[globalVtxIndices[1]];
     gs.vertexPositions[2] = t_ClusterVertexPositions[globalVtxIndices[2]];
 
+#if VERTEX_NORMALS
+    // Load vertex normals.
+    gs.vertexNormals[0] = t_ClusterVertexNormals[globalVtxIndices[0]];
+    gs.vertexNormals[1] = t_ClusterVertexNormals[globalVtxIndices[1]];
+    gs.vertexNormals[2] = t_ClusterVertexNormals[globalVtxIndices[2]];
+#endif
+
+
+    // Use this for a stable cluster ID
+    uint linearClusterOffset = (clusterShadingData.m_clusterOffset.y * clusterShadingData.m_clusterSizeX) + clusterShadingData.m_clusterOffset.x;
+    SHADER_DEBUG(uint2(clusterShadingData.m_surfaceId, linearClusterOffset));
+    SHADER_DEBUG(localVtxIndices);
+
     // Texcoords
     // Bilinear texcoords
     float2 uvs[3];
@@ -336,8 +353,6 @@ GetGeometryFromHit(RayPayload payload)
 
     gs.surfaceUV = uv;
     gs.surfaceIndex = clusterShadingData.m_surfaceId;
-
-    SHADER_DEBUG(gs.surfaceIndex);
 
     // bilerp from 4 corner attributes
     const float u = uv.x;
@@ -349,6 +364,12 @@ GetGeometryFromHit(RayPayload payload)
         + clusterShadingData.m_texcoords[3] * (1.0f - u) * v;
 
     return gs;
+}
+
+// Blinking function that returns true for "on" state based on subframe index
+bool GetBlinkState(uint subFrameIndex, uint blinkPeriod = 60)
+{
+    return (subFrameIndex / blinkPeriod) % 2 == 0;
 }
 
 void GetClipPoints(out float3 outClipPoints[3], in GeometrySample gs)
@@ -374,7 +395,7 @@ void GetClipPoints(out float3 outClipPoints[3], in GeometrySample gs)
     outClipPoints[2] = projectedPoints[2].xyz / projectedPoints[2].w;
 }
 
-MaterialSample RTXMG_EvaluateSceneMaterial(GeometrySample gs, float3 geometryNormal, MaterialTextureSample textures)
+MaterialSample RTXMG_EvaluateSceneMaterial(GeometrySample gs, float3 normal, MaterialTextureSample textures)
 {
     MaterialSample result = DefaultMaterialSample();
     result.roughness = 1;
@@ -383,8 +404,8 @@ MaterialSample RTXMG_EvaluateSceneMaterial(GeometrySample gs, float3 geometryNor
 
     if (colorMode == ColorMode::COLOR_BY_NORMAL)
     {
-        result.baseColor = 0.5f * (float3(1, 1, 1) + geometryNormal);
-        result.diffuseAlbedo = 0.5f * (float3(1, 1, 1) + geometryNormal);
+        result.baseColor = 0.5f * (float3(1, 1, 1) + normal);
+        result.diffuseAlbedo = 0.5f * (float3(1, 1, 1) + normal);
     }
     else if (colorMode == ColorMode::COLOR_BY_TOPOLOGY)
     {
@@ -492,9 +513,32 @@ MaterialSample RTXMG_EvaluateSceneMaterial(GeometrySample gs, float3 geometryNor
     }
     else if (colorMode == ColorMode::COLOR_BY_SURFACE_INDEX)
     {
-        float3 hashedColor = UintToColor(gs.surfaceIndex);
-        result.baseColor = hashedColor;
-        result.diffuseAlbedo = hashedColor;
+        if (g_RenderParams.debugSurfaceIndex >= 0)
+        {
+            // Highlighting mode enabled
+            if (gs.surfaceIndex == (uint)g_RenderParams.debugSurfaceIndex)
+            {
+                // This is the highlighted surface - blink between red and dark gray
+                bool blinkOn = GetBlinkState(g_RenderParams.subFrameIndex);
+                float3 highlightColor = blinkOn ? float3(1.0, 0.0, 0.0) : float3(0.1, 0.1, 0.1);
+                result.baseColor = highlightColor;
+                result.diffuseAlbedo = highlightColor;
+            }
+            else
+            {
+                // All other surfaces are dark gray
+                float3 darkGray = float3(0.1, 0.1, 0.1);
+                result.baseColor = darkGray;
+                result.diffuseAlbedo = darkGray;
+            }
+        }
+        else
+        {
+            // Normal hashed color scheme when no debug surface is selected
+            float3 hashedColor = UintToColor(gs.surfaceIndex);
+            result.baseColor = hashedColor;
+            result.diffuseAlbedo = hashedColor;
+        }
     }
     else if (colorMode == ColorMode::COLOR_BY_CLUSTER_UV)
     {
@@ -536,7 +580,7 @@ MaterialTextureSample RTXMG_DefaultMaterialTextures()
 
 MaterialSample
 SampleGeometryMaterial(GeometrySample gs,
-    float3 geometryNormal,
+    float3 normal,
     float2 texGradX,
     float2 texGradY,
     float mipLevel, // <-- Use a compile time constant for mipLevel, < 0 for aniso filtering
@@ -601,10 +645,10 @@ SampleGeometryMaterial(GeometrySample gs,
                 materialSampler, gs.texcoord, texGradX, texGradY);
     }
 
-    return RTXMG_EvaluateSceneMaterial(gs, geometryNormal, textures);
+    return RTXMG_EvaluateSceneMaterial(gs, normal, textures);
 }
 
-MaterialSample GetMaterialSample(GeometrySample gs, float3 geometryNormal)
+MaterialSample GetMaterialSample(GeometrySample gs, float3 normal)
 {
     uint2 pixelPosition = DispatchRaysIndex().xy;
 
@@ -636,7 +680,7 @@ MaterialSample GetMaterialSample(GeometrySample gs, float3 geometryNormal)
     float2 texGradX = texCoordX - texCoord0;
     float2 texGradY = texCoordY - texCoord0;
 
-    MaterialSample ms = SampleGeometryMaterial(gs, geometryNormal, texGradX, texGradY, -1, s_MaterialSampler);
+    MaterialSample ms = SampleGeometryMaterial(gs, normal, texGradX, texGradY, -1, s_MaterialSampler);
 
     return ms;
 }
@@ -663,13 +707,32 @@ IntersectionRecord GetIntersectionRecord(RayPayload payload)
     ir.p = SafeSpawnPoint(wldP, ir.gn, wldOffset);
 
     ir.n = ir.gn;
+    
+#if VERTEX_NORMALS
+    // Use interpolated vertex normals when available
+    float3 objInterpolatedNormal = gs.barycentrics.x * gs.vertexNormals[0] + 
+                                   gs.barycentrics.y * gs.vertexNormals[1] + 
+                                   gs.barycentrics.z * gs.vertexNormals[2];
+    
+    // Transform to world space and normalize
+    float3 worldInterpolatedNormal = normalize(mul((float3x3)gs.objectToWorld, objInterpolatedNormal));
+    
+    // Handle front-facing (ensure normal faces towards camera)
+    if (dot(worldInterpolatedNormal, WorldRayDirection()) > 0.0f)
+    {
+        worldInterpolatedNormal = -worldInterpolatedNormal;
+    }
+    
+    ir.n = worldInterpolatedNormal;
+#endif
+    
     ir.texcoord = gs.texcoord;
     ir.barycentrics = gs.barycentrics;
     ir.surfaceIndex = gs.surfaceIndex;
     ir.surfaceUV = gs.surfaceUV;
 
-    ir.ms = GetMaterialSample(gs, ir.gn);
-    ir.ms.geometryNormal = ir.n;
+    ir.ms = GetMaterialSample(gs, ir.n);
+    ir.ms.geometryNormal = ir.gn;
     ir.ms.shadingNormal = ir.n;
 
     if (g_RenderParams.enableWireframe)

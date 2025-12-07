@@ -61,7 +61,7 @@ struct MediaAsset
         OBJ_SEQUENCE
     } type = Type::OBJ_FILE;
 
-    char const* name = nullptr;
+    std::string name;
 
     std::string sequenceName; // decorated sequence name to display in GUI
     std::string
@@ -80,7 +80,7 @@ struct MediaAsset
 
     char const* GetName() const
     {
-        return IsSequence() ? sequenceName.c_str() : name;
+        return IsSequence() ? sequenceName.c_str() : name.c_str();
     }
 
     void GrowFrameRange(int frame)

@@ -63,6 +63,8 @@
 
 static const uint32_t kComputeClusterTilingLanes = 32;
 
+static const float kEpsilon = 1e-6f;
+
 ConstantBuffer<ComputeClusterTilingParams> g_Params : register(b0);
 
 StructuredBuffer<float3> t_VertexControlPoints : register(t0);
@@ -157,7 +159,7 @@ bool HiZIsVisible(Box3 aabb)
     return true;
 }
 
-float FrustumVisibility(SubdivisionEvaluatorHLSL subd, uint3 threadIdx)
+float FrustumVisibility(SubdivisionEvaluatorHLSL subd, uint iLane)
 {
     SurfaceDescriptor desc = subd.GetSurfaceDesc();
     uint32_t numControlPoints = subd.GetPlan().m_data.numControlPoints;
@@ -171,7 +173,7 @@ float FrustumVisibility(SubdivisionEvaluatorHLSL subd, uint3 threadIdx)
     // bit 4: behind eye
     uint signBits = 0xFF;
 
-    for (uint32_t i = threadIdx.x; i < numControlPoints; i += 32)
+    for (uint32_t i = iLane; i < numControlPoints; i += kComputeClusterTilingLanes)
     {
         Index index = subd.m_vertexControlPointIndices[desc.firstControlPoint + i];
         float3 cp = subd.m_vertexControlPoints[index];
@@ -210,7 +212,7 @@ float FrustumVisibility(SubdivisionEvaluatorHLSL subd, uint3 threadIdx)
     }
 
     // butterfly reduction of AABB across lanes
-    for (int i = 16; i >= 1; i /= 2)
+    for (int i = (kComputeClusterTilingLanes/2); i >= 1; i /= 2)
     {
         uint targetLane = WaveGetLaneIndex() ^ i;
         aabb.m_min.x = min(aabb.m_min.x, WaveReadLaneAt(aabb.m_min.x, targetLane));
@@ -223,7 +225,7 @@ float FrustumVisibility(SubdivisionEvaluatorHLSL subd, uint3 threadIdx)
     }
 
 
-    if (threadIdx.x == 0 && aabb.Valid())
+    if (iLane == 0 && aabb.Valid())
     {
         aabb.m_min.x = clamp(aabb.m_min.x, 0.f, g_Params.viewportSize.x);
         aabb.m_max.x = clamp(aabb.m_max.x, 0.f, g_Params.viewportSize.x);
@@ -238,13 +240,13 @@ float FrustumVisibility(SubdivisionEvaluatorHLSL subd, uint3 threadIdx)
     return (float)surfaceVisible;
 }
 
-float CalculateVisibility(SubdivisionEvaluatorHLSL subd, uint3 threadIdx)
+float CalculateVisibility(SubdivisionEvaluatorHLSL subd, uint iLane)
 {
     float visibility = 1.0; // fully visible
 #if VIS_MODE == VIS_MODE_SURFACE
     if (g_Params.enableFrustumVisibility)
     {
-        visibility = FrustumVisibility(subd, threadIdx);
+        visibility = FrustumVisibility(subd, iLane);
     }
 #elif VIS_MODE == VIS_MODE_LIMIT_EDGES
     // for edge visibility, all the work IsBSplinePatch done below int `calculateEdgeVisibility`
@@ -328,16 +330,19 @@ float CalculateEdgeVisibility(uint32_t iLane, uint32_t waveSampleOffset, float v
     {
         for (uint16_t i = 0; i < 3; ++i)
         {
-            float3 t0 = samples[waveSampleOffset + (iLane * 2 + i) % kNumWaveSurfaceUVSamples].deriv1;
-            float3 t1 = samples[waveSampleOffset + (iLane * 2 + i) % kNumWaveSurfaceUVSamples].deriv2;
-            float3 nobj = cross(t0, t1);
-            float3 nworld = normalize(mul(g_Params.localToWorld, float4(nobj, 0.f)).xyz);
+            uint32_t sampleIndex = (iLane * 2 + i) % kNumWaveSurfaceUVSamples;
+            float3 t0 = samples[waveSampleOffset + sampleIndex].deriv1;
+            float3 t1 = samples[waveSampleOffset + sampleIndex].deriv2;
 
-            float cosTheta = dot(normalize(pworld[i] - g_Params.cameraPos), nworld);
+            if (!IsParallel(t0, t1))
+            {
+                float3 nobj = cross(t0, t1);
+                float3 nworld = normalize(mul(g_Params.localToWorld, float4(nobj, 0.f)).xyz);
+                float cosTheta = dot(normalize(pworld[i] - g_Params.cameraPos), nworld);
+                float backfaceFactor = smoothstep(.6f, 1.f, cosTheta);
 
-            float backfaceFactor = smoothstep(.6f, 1.f, cosTheta);
-
-            visibility *= (1.f - backfaceFactor);
+                visibility *= (1.f - backfaceFactor);
+            }            
         }
     }
     return visibility;
@@ -413,7 +418,7 @@ void WaveEvaluateBSplinePatch8(uint32_t iWave,
     {
         Texture2D<float> displacementTexture = ResourceDescriptorHeap[NonUniformResourceIndex(displacementTexIndex)];
         LimitFrame displaced = DoDisplacement(texcoordEval,
-            samples[waveSampleOffset + iLane], subd.m_surfaceIndex, kWaveSurfaceUVSamples[iLane],
+            samples[waveSampleOffset + iLane], subd.m_surfaceIndex, kWaveSurfaceUVSamples[iLane], 0, 0,
             displacementTexture,
             s_DisplacementSampler, displacementScale);
         samples[waveSampleOffset + iLane] = displaced;
@@ -514,16 +519,8 @@ void WriteSurfaceWave(uint32_t iWave, uint32_t iLane, uint32_t iSurface, GridSam
         u_GridSamplers[iSurface] = rSampler;
     }
 
-    SHADER_DEBUG(uint4(rSampler.edgeSegments));
-
     uint16_t2 surfaceSize = rSampler.GridSize();
     SurfaceTiling surfaceTiling = MakeSurfaceTiling(surfaceSize);
-
-    [unroll]
-    for (uint32_t i = 0; i < 4; i++)
-    {
-        SHADER_DEBUG(uint4(surfaceTiling.subTilings[i].tilingSize, surfaceTiling.subTilings[i].clusterSize));
-    }
 
     uint32_t clusterCount = 0;
     uint32_t vertexCount = 0;
@@ -574,8 +571,6 @@ void WriteSurfaceWave(uint32_t iWave, uint32_t iLane, uint32_t iSurface, GridSam
         }
 #endif
         clusterTris = 2 * (uint32_t)surfaceSize.x * (uint32_t)surfaceSize.y;
-
-        SHADER_DEBUG(uint4(clusterCount, vertexCount, clasBlocks, clusterTris));
     }
 
 #if ENABLE_GROUP_ATOMICS
@@ -755,7 +750,7 @@ void main(uint3 threadIdx : SV_GroupThreadID, uint3 groupIdx : SV_GroupID)
     texcoordEval.WaveEvaluateTexCoordPatchPoints(iLane, iSurface);
 
     // Frustum "culling"
-    float visibility = CalculateVisibility(subd, threadIdx);
+    float visibility = CalculateVisibility(subd, iLane);
 
     // -------------------------------------------------------------------------
     // Evaluate corner and mid points for surface quad

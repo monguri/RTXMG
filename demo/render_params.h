@@ -132,7 +132,7 @@ struct RenderParams
     ColorMode colorMode;
     ShadingMode shadingMode;
     uint32_t spp;
-    int subFrameIndex;
+    uint32_t subFrameIndex;
 
     int enableWireframe;
     float wireframeThickness;
@@ -142,7 +142,7 @@ struct RenderParams
     uint32_t isolationLevel;
     uint32_t clusterPattern;
     float globalDisplacementScale;
-    float pad0;
+    int debugSurfaceIndex;
 
     float3 missColor;
     uint32_t ptMaxBounces;

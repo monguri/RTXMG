@@ -1,5 +1,20 @@
 # RTX Mega Geometry SDK Change Log
 
+## 1.0.1
+
+Improvements
+* Add smooth vertex normal support which allows for lower tessellation rates and includes memory profiler row for vertex normals
+* Filter out degenerate normals for backface culling to improve backface test and reduce triangle count
+
+Debugging Improvements
+* Improve shader debug with stable cluster index output from path tracing shader
+* Add surface highlighting feature where path-tracer will blink highlight a selected debug surface
+* Add utilities to shader debug to force output
+
+Bug Fixes
+* Fix regression in surface 1-ring culling caused by 1D thread-ordering change, which resulted in incorrect lanes doing work for unrelated waves
+* Fix crash when refreshing media list after changing json/obj filters with an asset already loaded
+
 ## 1.0.0
 
 Vulkan Support
