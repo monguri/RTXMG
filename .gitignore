@@ -1,7 +1,10 @@
 *.*~
 scenes
 bin/
-_build/
+_build*/
 _install/
-build/
+build*/
 .vscode/
+.claude/
+.clangd
+_nvsngeocache/

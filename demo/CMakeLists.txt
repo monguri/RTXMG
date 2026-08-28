@@ -35,7 +35,7 @@ donut_compile_shaders_all_platforms(
 add_executable(${app} 
     ${sources} 
 )
-target_link_libraries(${app} PUBLIC envmap rtxmg donut_render donut_app donut_engine implot)
+target_link_libraries(${app} PUBLIC envmap rtxmg donut_render donut_app donut_engine implot cgltf)
 
 option(RTXMG_DEV_FEATURES "Enable development features (debugging, etc)" OFF)
 if(RTXMG_DEV_FEATURES)

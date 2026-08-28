@@ -1,23 +1,13 @@
 /*
- * Copyright (c) 2014-2021, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2014-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+ * property and proprietary rights in and to this material, related
+ * documentation and any modifications thereto. Any use, reproduction,
+ * disclosure or distribution of this material and related documentation
+ * without an express license agreement from NVIDIA CORPORATION or
+ * its affiliates is strictly prohibited.
  */
 
 
@@ -25,6 +15,92 @@
 #include <donut/app/DeviceManager.h>
 #include <donut/core/log.h>
 #include <nvrhi/utils.h>
+
+#ifdef _WIN32
+#include <Windows.h>
+#include <DbgHelp.h>
+#include <cstdio>
+#include <cstdlib>
+#include <crtdbg.h>
+#pragma comment(lib, "DbgHelp.lib")
+
+// Redirect CRT asserts/errors to stderr and then crash so the SEH handler fires.
+static int CrtReportHook(int reportType, char* message, int* /*returnValue*/)
+{
+    if (reportType == _CRT_ASSERT || reportType == _CRT_ERROR)
+    {
+        const char* tag = (reportType == _CRT_ASSERT) ? "ASSERT" : "ERROR";
+        fprintf(stderr, "\n=== CRT %s ===\n%s\n", tag, message ? message : "(no message)");
+        fflush(stderr);
+        // Raise a structured exception so UnhandledExceptionHandler can print a callstack.
+        RaiseException(EXCEPTION_ACCESS_VIOLATION, 0, 0, nullptr);
+    }
+    return FALSE; // use default handling for _CRT_WARN
+}
+
+static LONG WINAPI UnhandledExceptionHandler(EXCEPTION_POINTERS* pExceptionInfo)
+{
+    HANDLE hProcess = GetCurrentProcess();
+
+    SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES);
+    SymInitialize(hProcess, nullptr, TRUE);
+
+    EXCEPTION_RECORD* pRecord = pExceptionInfo->ExceptionRecord;
+
+    // Copy context so StackWalk64 modifications don't corrupt the original
+    CONTEXT context = *pExceptionInfo->ContextRecord;
+
+    fprintf(stderr, "\n=== CRASH: Unhandled Exception ===\n");
+    fprintf(stderr, "Exception Code:    0x%08lX\n", pRecord->ExceptionCode);
+    fprintf(stderr, "Exception Address: %p\n", pRecord->ExceptionAddress);
+
+    STACKFRAME64 frame = {};
+    frame.AddrPC.Offset    = context.Rip;
+    frame.AddrPC.Mode      = AddrModeFlat;
+    frame.AddrFrame.Offset = context.Rbp;
+    frame.AddrFrame.Mode   = AddrModeFlat;
+    frame.AddrStack.Offset = context.Rsp;
+    frame.AddrStack.Mode   = AddrModeFlat;
+
+    char symBuf[sizeof(SYMBOL_INFO) + MAX_SYM_NAME];
+    SYMBOL_INFO* pSym = reinterpret_cast<SYMBOL_INFO*>(symBuf);
+    pSym->SizeOfStruct = sizeof(SYMBOL_INFO);
+    pSym->MaxNameLen   = MAX_SYM_NAME;
+
+    IMAGEHLP_LINE64 line = {};
+    line.SizeOfStruct = sizeof(IMAGEHLP_LINE64);
+
+    fprintf(stderr, "\nCallstack:\n");
+
+    HANDLE hThread = GetCurrentThread();
+    for (int i = 0; i < 64; ++i)
+    {
+        if (!StackWalk64(IMAGE_FILE_MACHINE_AMD64, hProcess, hThread, &frame,
+                &context, nullptr, SymFunctionTableAccess64, SymGetModuleBase64, nullptr)
+            || frame.AddrPC.Offset == 0)
+            break;
+
+        fprintf(stderr, "  [%2d] 0x%016llX", i, static_cast<unsigned long long>(frame.AddrPC.Offset));
+
+        DWORD64 symDisp = 0;
+        if (SymFromAddr(hProcess, frame.AddrPC.Offset, &symDisp, pSym))
+        {
+            fprintf(stderr, "  %s + 0x%llX", pSym->Name, static_cast<unsigned long long>(symDisp));
+
+            DWORD lineDisp = 0;
+            if (SymGetLineFromAddr64(hProcess, frame.AddrPC.Offset, &lineDisp, &line))
+                fprintf(stderr, "  (%s:%lu)", line.FileName, line.LineNumber);
+        }
+        fprintf(stderr, "\n");
+    }
+
+    fprintf(stderr, "==================================\n\n");
+    fflush(stderr);
+
+    SymCleanup(hProcess);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif // _WIN32
 
 extern "C" {
 
@@ -41,10 +117,44 @@ extern "C" {
 
 using namespace donut;
 
+class UIScreenshotPass : public donut::app::IRenderPass
+{
+    RTXMGDemoApp& m_app;
+public:
+    UIScreenshotPass(donut::app::DeviceManager* dm, RTXMGDemoApp& app)
+        : IRenderPass(dm), m_app(app) {}
+    void Render(nvrhi::IFramebuffer* framebuffer) override
+    {
+        m_app.CaptureScreenshotWithUI(framebuffer);
+    }
+};
+
 int main(int argc, const char** argv)
 {
+#ifdef _WIN32
+    SetUnhandledExceptionFilter(UnhandledExceptionHandler);
+#ifdef _DEBUG
+    _CrtSetReportHook(CrtReportHook);
+#endif
+#endif
+
     donut::log::ConsoleApplicationMode();
-    donut::log::EnableOutputToMessageBox(true);
+
+    // Disable message-box dialogs when running headless (-nf / --nframes),
+    // so automated runs and CI harnesses don't block on error popups.
+    bool headless = false;
+    for (int i = 1; i < argc; ++i)
+    {
+        // --shot-list is headless too, and deliberately ignores -nf, so the
+        // harness' golden scenarios pass no frame count at all.
+        if (strcmp(argv[i], "-nf") == 0 || strcmp(argv[i], "--nframes") == 0 ||
+            strcmp(argv[i], "--shot-list") == 0)
+        {
+            headless = true;
+            break;
+        }
+    }
+    donut::log::EnableOutputToMessageBox(!headless);
 
     nvrhi::GraphicsAPI api = app::GetGraphicsAPIFromCommandLine(argc, argv);
 
@@ -74,18 +184,21 @@ int main(int argc, const char** argv)
         {
             RTXMGDemoApp app(deviceManager, title, argc, argv);
             UserInterface gui(app);
+            UIScreenshotPass uiScreenshot(deviceManager, app);
             if (app.Init() && gui.CustomInit(app.GetRenderer().GetShaderFactory()))
             {
                 deviceManager->AddRenderPassToBack(&app);
                 deviceManager->AddRenderPassToBack(&gui);
+                deviceManager->AddRenderPassToBack(&uiScreenshot);
                 deviceManager->RunMessageLoop();
+                deviceManager->RemoveRenderPass(&uiScreenshot);
                 deviceManager->RemoveRenderPass(&gui);
                 deviceManager->RemoveRenderPass(&app);
             }
 
             Profiler::Terminate();
         }
-        
+
         deviceManager->Shutdown();
         delete deviceManager;
     }

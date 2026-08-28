@@ -9,7 +9,7 @@ add_library(${lib} OBJECT ${sources})
 target_include_directories(${lib} PUBLIC 
     "${CMAKE_CURRENT_SOURCE_DIR}/../include"
 )
-target_link_libraries(${lib} donut_engine implot)
+target_link_libraries(${lib} donut_engine)
 set_target_properties(${lib} PROPERTIES FOLDER ${folder})
 
 donut_compile_shaders_all_platforms(

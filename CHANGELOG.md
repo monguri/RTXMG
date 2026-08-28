@@ -1,5 +1,57 @@
 # RTX Mega Geometry SDK Change Log
 
+## 2.0.0
+
+Adds a second geometry path: **Cluster LOD**. Pre-baked triangle clusters are selected
+each frame from a continuous LOD hierarchy and streamed into VRAM on demand, so a scene's
+source geometry no longer has to fit in VRAM — detail is bounded by a memory budget
+rather than by mesh count. It shares the material table, TLAS and scene graph with the
+existing tessellation path, so a single scene can use both.
+
+The path is scene-driven — load a `.gltf` or `.glb` model and it runs. See
+[ClusterLOD.md](docs/ClusterLOD.md).
+
+Cluster LOD
+
+* Offline bake, cached to a per-geometry `_nvsngeo` cluster cache so that only the first
+  load of an asset pays for it, optionally with arithmetic-packed vertex data unpacked
+  per group at load
+* GPU-driven residency streaming against fixed geometry and CLAS pools, with a persistent
+  CLAS allocator, plus a preloaded reference path
+* Adaptive LOD error raises the effective pixel error while the pools run hot, so a scene
+  larger than its budget settles coarser instead of thrashing
+* BLAS sharing, caching and merging, all on by default, to keep acceleration-structure
+  build cost from scaling with instance count
+* Frustum and Hierarchical-Z occlusion culling feeding back into LOD selection
+
+Content
+
+* Load glTF 2.0 scenes: PBR metallic-roughness materials, KTX2 textures, alpha-masked and
+  two-sided geometry, `EXT_mesh_gpu_instancing`, and `KHR_materials_transmission` /
+  `KHR_materials_ior` for thin-walled glass
+* Cap material texture memory, applied at scene load by dropping high-resolution mips
+* Shade Cluster LOD hits with normal maps, with a tangent frame derived from the hit
+  triangle's du/dv rather than baked per-vertex tangents
+* Replicate a scene's instances into a grid to build a heavy scene from a small asset
+
+UI and Profiling
+
+* Add a Streaming profiler tab: pool occupancy, resident groups and clusters, transfer
+  and load rates, and per-frame BLAS builds
+* Split the BVH profiler tab into ClusterTess BVH and ClusterLOD BVH; each is hidden when
+  its geometry path is not in the scene
+* Add the Geometry Inspector window: every geometry in the scene with per-LOD residency
+  detail, selectable by picking a surface in the viewport
+* Add Cluster LOD colour modes for LOD level, cluster group, BLAS source and whether a
+  BLAS came from the cache
+* Add a Cluster LOD section to the Settings window covering shading, LOD selection,
+  culling and BLAS reuse, and a Bake Config window for the bake settings
+* Add a VRAM Budget window that owns every memory budget — texture, Cluster LOD pool and
+  tessellation — and plots current against proposed consumption over the card's VRAM,
+  including the driver-reported process total. Budgets that change what is read off disk
+  commit through a confirmation dialog and a scene reload; the pool budgets apply as they
+  are edited
+
 ## 1.0.1
 
 Improvements

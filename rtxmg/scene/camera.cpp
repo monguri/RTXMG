@@ -1,29 +1,14 @@
-//
-// Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions
-// are met:
-//  * Redistributions of source code must retain the above copyright
-//    notice, this list of conditions and the following disclaimer.
-//  * Redistributions in binary form must reproduce the above copyright
-//    notice, this list of conditions and the following disclaimer in the
-//    documentation and/or other materials provided with the distribution.
-//  * Neither the name of NVIDIA CORPORATION nor the names of its
-//    contributors may be used to endorse or promote products derived
-//    from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-// PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
-// CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-// EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-// PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
-// OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+ *
+ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+ * property and proprietary rights in and to this material, related
+ * documentation and any modifications thereto. Any use, reproduction,
+ * disclosure or distribution of this material and related documentation
+ * without an express license agreement from NVIDIA CORPORATION or
+ * its affiliates is strictly prohibited.
+ */
 //
 
 #include <algorithm>
@@ -95,8 +80,16 @@ void Camera::Zoom(const float factor)
 void Camera::Frame(box3 const& aabb)
 {
     SetFovY(35.0f);
-    SetLookat(aabb.center());
-    SetEye(aabb.center() + 1.2f * MaxBoxExtent(aabb));
+    // An empty/degenerate aabb (bbox not populated yet mid scene-switch) would put
+    // the eye exactly at the look-at, giving a NaN view direction.
+    float extent = MaxBoxExtent(aabb);
+    if (!(extent > 0.f) || !std::isfinite(extent))
+        extent = 1.f;
+    float3 center = aabb.center();
+    if (!all(isfinite(center)))
+        center = float3(0.f, 0.f, 0.f);
+    SetLookat(center);
+    SetEye(center + 1.2f * extent);
     SetUp({ 0.f, 1.f, 0.f });
     m_changed = true;
 }
@@ -117,7 +110,17 @@ void Camera::ComputeBasis(float3& U, float3& V, float3& W) const
 
     W = m_lookat - m_eye; // Do not normalize W -- it implies focal length
     wlen = length(W);
-    U = normalize(cross(W, m_up));
+    // A zero-length view vector, or one parallel to 'up', collapses the cross
+    // products to normalize(0) -> NaN basis.
+    if (!(wlen > 1e-6f))
+    {
+        W = float3(0.f, 0.f, -1.f);
+        wlen = 1.f;
+    }
+    float3 up = m_up;
+    if (length(cross(W, up)) < 1e-6f)
+        up = (fabsf(normalize(W).y) > 0.99f) ? float3(1.f, 0.f, 0.f) : float3(0.f, 1.f, 0.f);
+    U = normalize(cross(W, up));
     V = normalize(cross(U, W));
 
     float vlen = wlen * tanf(0.5f * m_fovY * PI_f / 180.0f);

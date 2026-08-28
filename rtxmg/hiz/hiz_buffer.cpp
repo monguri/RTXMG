@@ -1,29 +1,14 @@
-//
-// Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions
-// are met:
-//  * Redistributions of source code must retain the above copyright
-//    notice, this list of conditions and the following disclaimer.
-//  * Redistributions in binary form must reproduce the above copyright
-//    notice, this list of conditions and the following disclaimer in the
-//    documentation and/or other materials provided with the distribution.
-//  * Neither the name of NVIDIA CORPORATION nor the names of its
-//    contributors may be used to endorse or promote products derived
-//    from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-// PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
-// CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-// EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-// PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
-// OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+ *
+ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+ * property and proprietary rights in and to this material, related
+ * documentation and any modifications thereto. Any use, reproduction,
+ * disclosure or distribution of this material and related documentation
+ * without an express license agreement from NVIDIA CORPORATION or
+ * its affiliates is strictly prohibited.
+ */
 //
 
 
@@ -130,21 +115,16 @@ void HiZBuffer::Display(nvrhi::ITexture* output, nvrhi::ICommandList* commandLis
 
     nvrhi::BindingLayoutDesc bindingLayoutDesc;
     nvrhi::BindingSetDesc bindingSetDesc;
-    GetDesc(&bindingLayoutDesc, &bindingSetDesc, true);
+    GetDesc(&bindingLayoutDesc, &bindingSetDesc, false);
     bindingLayoutDesc
-        .addItem(nvrhi::BindingLayoutItem::ConstantBuffer(0))
+        // m_displayParamsBuffer is volatile, so the layout must say so for nvrhi to
+        // bind it as a root CBV re-patched per writeBuffer version.
+        .addItem(nvrhi::BindingLayoutItem::VolatileConstantBuffer(0))
         .addItem(nvrhi::BindingLayoutItem::Texture_UAV(0))
         .setVisibility(nvrhi::ShaderType::Compute);
     bindingSetDesc
         .addItem(nvrhi::BindingSetItem::ConstantBuffer(0, m_displayParamsBuffer))
         .addItem(nvrhi::BindingSetItem::Texture_UAV(0, output));
-
-    // need to write *something* to the constant buffer before we set up the compute state
-    HiZDisplayParams params;
-    params.level = 0;
-    params.offsetX = offset.x;
-    params.offsetY = offset.y;
-    commandList->writeBuffer(m_displayParamsBuffer, &params, sizeof(params));
 
     if (!m_displayBL)
     {
@@ -169,12 +149,10 @@ void HiZBuffer::Display(nvrhi::ITexture* output, nvrhi::ICommandList* commandLis
 
         m_displayPSO = device->createComputePipeline(computePipelineDesc);
     }
-    
+
     auto state = nvrhi::ComputeState()
         .setPipeline(m_displayPSO)
         .addBindingSet(bindingSet);
-
-    commandList->setComputeState(state);
 
     for (uint8_t level = 0; level < HIZ_MAX_LODS; level++)
     {
@@ -192,8 +170,10 @@ void HiZBuffer::Display(nvrhi::ITexture* output, nvrhi::ICommandList* commandLis
         params.level = level;
         params.offsetX = offset.x;
         params.offsetY = offset.y;
+        // Each writeBuffer to a volatile CB makes a new version, so setComputeState
+        // has to be re-issued inside the loop to bind that version's CBV.
         commandList->writeBuffer(m_displayParamsBuffer, &params, sizeof(params));
-
+        commandList->setComputeState(state);
         commandList->dispatch(numBlocks.x, numBlocks.y);
 
         offset.x += extent.x + spacing;

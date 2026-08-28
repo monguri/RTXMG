@@ -1,300 +1,343 @@
 # Quick Start Guide
 
-See [README](../README.md) for cloning & build steps.
+See [README](../README.md) for cloning, build steps, and the sample scenes. For algorithm
+deep-dives see [ClusterTess.md](ClusterTess.md) and [ClusterLOD.md](ClusterLOD.md).
 
-## Path-tracer sample
-
-This sample uses NVAPI cluster template extensions (RTX MG) to handle very large 
-updates to the ray-tracing acceleration structure (BVH).
-
-This enables real-time path-tracing of subdivision surfaces with displacement 
-mapping for the first time.
-(see [OpenSubdiv](https://graphics.pixar.com/opensubdiv/docs/intro.html))
-
-### Getting started
-
-On startup, the sample application should be displaying the user-interface in
-default mode.
-The interface is self-documenting : hover the mouse over widgets to access
-detailed tool-tips.
-
-![overview](./images/ui.jpg)
-
-
-### Finding & loading content
-
-On load, the application scans the `assets` folder located at the root of the
-project and automatically populates the `scene` pull-down menu with compatible
-assets. Additional asset file can be placed in this folder hierarchy and will
-be detected on the next launch of the application.
-
-![](./images/scene_loading.png)
-
-> [!TIPS]
-> The application will attempt to locate a folder named ‘assets’; if
-> unsuccessful, the path to the folder will be blank and the ‘Scene’ pull-down
-> menu will remain empty.
-
-### Camera controls
-
-The camera follows the following conventions:
-
-  | First-person mode  |                                                          |
-  | ------------------ | -------------------------------------------------------- |
-  | WASD               | forward / strafe left / backward / strafe right movement |   
-  | LMB + drag         | orient the view                                          |   
-
-  | Orbit mode         |                                                          |
-  | ------------------ | -------------------------------------------------------- |
-  | alt + LMB          | orbit around origin                                      |   
-  | alt + MMP          | pan                                                      | 
-  | mouse wheel        | dolly                                                    |
-
-### Keyboard shortcuts
-
-For the complete list, refer to the source code in `RTXMGDemoApp::KeyboardUpdate`
-
-|            |                                                               |
-| ---------- | ------------------------------------------------------------- |
-| esc        | terminate application                                         |
-| f          | reset camera                                                  |
-| 1          | cycle shading modes                                           |
-| 2          | cycle color modes forward                                     |
-| /          | toggle dynamic tessellation ('freeze tess camera')            |
-|            |                                                               |
-
-### Profiler
-
-The sample application tracks a number of run-time performance metrics that can
-be accessed through the profiler window.
-
-The profiler window can be toggled from the button next to the FPS counter: 
-
-![profiler ctrl](./images/profiler_button.png)
-
-Profiling data is split into the following tabs:
-  * Frame : overall frame performance (ray-trace time, denoiser, ...)
-  * AccelBuilder : granular breakdown of the BVH build
-  * Evaluator : specifics of subdivision surface evaluation
-  * Memory : tessellation & BVH memory usage
-
-
-![profiler UI](./images/profiler_ui.png)
+This guide covers how to explore the running application: the window layout, camera and
+keyboard controls, and each of the tool windows.
 
 ---
 
-## Dynamic tessellation
+## Window layout
 
-![tessellation](./images/tessellation.png)
+<img src="./images/ui.jpg" width="1920" alt="Application overview">
 
-Dynamic tessellation generates new topology each frame, which forces a complete
-rebuild of very large sections of the BVH. NVAPI's Mega-Geometry CLAS extensions
-to the ray-tracing acceleration structure build system are crucial to meeting the
-throughput requirements. However, partitioning large meshes into clusters is only
-part of the solution. Tessellation algorithms generally produce large amounts of
-repeating topology patterns: it is possible to take advantage of such a structured
-output.
+The application draws a toolbar in the top-left corner and a Tris / FPS readout in the
+bottom-right. Everything else is a window you open from the toolbar.
 
-> [!IMPORTANT]
-> All tessellation in this example is performed with generic compute : access
-> to the fixed-function tessellation hardware is still accessible through the
-> rasterizer's Hull and Domain shaders only.
-> See: [DirectX Graphics Pipeline](https://learn.microsoft.com/en-us/windows/uwp/graphics-concepts/graphics-pipeline)
+<img src="./images/top_level.png" width="365" alt="Toolbar">
 
-### Structured & Unstructured Clusters
+| toolbar button | opens |
+| - | - |
+| speaker | Mute audio |
+| camera | Save a screenshot |
+| **Settings** | All render and geometry settings (see below) |
+| **Profiler** | Frame timings, memory and streaming |
+| **Inspector** | Per-mesh geometry and residency stats |
+| **VRAM** | The VRAM Budget window |
+| **Help** | The keyboard / mouse reference, in-app |
 
-Because Catmull-Clark surfaces are exclusively quad-based, we can define a
-finite working set of rectangular tiles. Each tile in this set is a regular
-grid of triangles, with the set covering all the combinations of M x N 
-micro-triangle resolutions, up to a maximum of 8 x 8. 
+A button is highlighted red while its window is open.
 
-Because the set can be defined with a finite number of re-usable cluster
-topologies, we refer to these as 'structured clusters', as opposed to
-'unstructured clusters', where no such finite set can be composed (ex. clusters
-generated from photogrammetry data). The topology of the clusters itself can be
-entirely arbitrary though, and any pattern can be used (ex: barycentric 
-triangulation instead of quadrangulation). 
+Every widget has a tooltip — hover it for a description of what it does and what values
+are valid. Press **Esc** to hide the whole UI (and again to bring it back); the Tris /
+FPS readout goes with it.
 
-|  Quad cluster grids  |  Triangle cluster grids  |
-| :---: | :---: |
-| ![tessellation quads](./images/tessellation_quads.png) | ![tessellation triangles](./images/tessellation_triangles.png) |
+The bottom-right readout shows **Uniq Tris** (the CLAS-deduplicated triangle count in
+the TLAS), **Total Tris** (the instanced sum) and **FPS**. On a scene with no Cluster LOD
+geometry it shows a single **Tris** count instead.
 
-
-### Cluster Template API
-
-The Mega-Geometry NVAPI extensions expose a special BVH build path for structured
-clusters, with substantial build performance advantages : the `CLAS` templates.
-
-On application startup, each tiled grid configuration is passed to the `CLAS`
-template builder (using NVAPI), which generates a uniquely identified
-template specific to the triangle topology of that grid. The `CLAS` template
-contains no vertex position data, only topology (the index buffer).
-
-Each template represents a partially optimized BVH treelet that can be
-instantiated at run-time to any `CLAS` of matching topology. This allows the
-application to amortize enormous amounts of BVH build work, compounding each
-time a given template is instantiated with new or updated vertex positions.
-
-![bvh build](./images/clas_build.png)
-
-This template `CLAS` workflow provides build performance comparable with 
-traditional `BVH` refit, but is more flexible because it permits topology
-changes. It also has lower memory usage and more stable traversal performance
-versus traditional refit, and only clusters that are animated need to be
-rebuilt. It does, however, rely on a good clustering of the mesh by the
-application, where triangles in a cluster are near each other in space!
+An animated scene also gets a timeline across the bottom, with a scrubber and transport
+controls for playback speed and looping.
 
 ---
 
-## Frame Pipeline
+## Loading a scene
 
-![pipeline](./images/pipeline.png)
+<img src="./images/scene_loading.png" width="375" alt="Scene section">
 
-1. Subdivision mesh animation:   
-   Each frame starts with the interpolation of the subdivision control mesh (if animated).
-   The computation of the limit surface samples is integrated within the tessellation
-   algorithm, but follows the methods described in:
-   [Efficient GPU Rendering of Subdivision Surfaces using Adaptive Quadtrees](https://dl.acm.org/doi/10.1145/2897824.2925874)
-   (ACM TOG, Vol 35, Issue 4).
+The **Scene** section of the Settings window drives asset loading:
 
-2. Cluster tiling:
-   Applies heuristics to determine the tessellation edge-rates for each quadrangulated
-   face of the control mesh:
-   - Evaluate the limit surface at the locations of the 4 corners and 4 edge mid-points
-   - Apply displacement, if any
-   - Measure the lengths of the 8 projected segments in screen-space
-   - Check against visibility oracles (frustum, Hierarchical Z-Buffer, ...)
-   - Compute the final tessellation rates for the 4 edges
-   - If necessary, split into cluster tiles (max tile size is 8x8)
-   - Export clusters lists
+- **Data Folder** — the asset root, scanned on startup. Type a path or use the folder
+  button. Equivalent to `--media <dir>`.
+- **Scene** / **Obj** / **Gltf** checkboxes — which file types the browser lists.
+- **Scene** pull-down — every asset found under the data folder. Picking one loads it.
+- **Grid Instancing** — replicate the loaded model into a grid, which turns a small
+  asset into a heavy scene.
 
-3. Fill clusters:
-   Computes the vertex positions for each cluster exported from step 2:
-   - Evaluate the limit surface at all the micro-vertex locations in the cluster grid
-   - Use polynomial basis derivatives to compute analytically surface tangents
-     & normals
-   - Apply displacement, if any
-   - Export vertex & texcoord buffers
+Assets added to the folder hierarchy are picked up the next time the folder is rescanned
+(changing the Data Folder or a type filter forces a rescan).
 
-4. `CLAS` instantiation:
-   Compresses each cluster's data in `CLAS` templates:
-   - Select the cluster's template based on the cluster MxN edge-rate
-   - Fill the CLAS descriptor in GPU memory with the template ID and
-     pointers to the vertex data
-   - Call NVAPI CLAS template 'indirect' build function to launch the
-     build   
+### Included scenes
 
-5. `BLAS` build:
-    - Collect the pointers of the `CLAS`es instantiated in stage 4
-    - Fill the `BLAS` build descriptor (also in GPU memory)
-    - Call the NVAPI 'indirect' build function to launch the `BLAS`
-      build
+| scene | geometry | what it demonstrates |
+| - | - | - |
+| `cluster_lod/ABeautifulGame/glTF/ABeautifulGame.gltf` | Cluster LOD | Pre-baked clusters, streaming, multiple materials and textures |
+| `subdivision/amy_kitchenset.scene.json` | Cluster Tess | Adaptive tessellation of subdivision surfaces with displacement mapping |
+| `subdivision/amy_diner.scene.json` | Cluster Tess | Diner environment with an animated character |
+| `subdivision/barbarian_pt.scene.json` | Cluster Tess | Character model with displacement and PBR materials |
+| `subdivision/amy_abeautifulgame.scene.json` | Mixed | Both geometry paths sharing one material table and one TLAS |
 
-6. `TLAS` build:
-    Build the `TLAS` using the same NVAPI 'indirect' pattern.
+> [!NOTE]
+> A glTF model runs an offline Cluster LOD bake on its first load, writing a cluster
+> cache (`_nvsngeocache/`) next to the asset. Later loads memory-map the cache and skip
+> the bake. See [ClusterLOD.md — Baking / LOD generation](ClusterLOD.md#baking--lod-generation).
+
+The highest-fidelity scene is **Zorah**, downloaded separately — see
+[README — Running the Sample](../README.md#running-the-sample).
+
+---
+
+## Camera and keyboard controls
+
+The **Help** button opens this same table in-app, so it never goes stale.
+
+| Camera | |
+| - | - |
+| W / S | Move forward / backward |
+| A / D | Move left / right |
+| Q / E | Move down / up |
+| Z / X | Roll left / right |
+| Shift (hold) | Move 3x faster |
+| Ctrl (hold) | Move 10x finer |
+| Alt (hold) | Orbit mode |
+| F | Reset camera to the scene default |
+| C | Print the camera parameters to stdout |
+| / | Freeze / unfreeze the LOD camera |
+
+| Mouse | |
+| - | - |
+| Left drag | Look around (or orbit with Alt) |
+| Right click | Pick a mesh into the Inspector |
+| Wheel | Adjust camera speed |
+| Alt + wheel | Zoom |
+
+| View | |
+| - | - |
+| 1 | Next shading mode |
+| 2 / 4 | Next / previous color mode |
+| 3 | Toggle wireframe |
+| 5 | Next tonemapper |
+| T | Toggle the time view |
+| Left / Right | Decrease / increase max path bounces |
+
+| Application | |
+| - | - |
+| Esc | Show / hide all UI |
+| P | Save a screenshot |
+| Shift + P | Save a screenshot with the UI |
+| Ctrl + R | Reload shaders |
+| Alt + F4 | Quit |
+
+**Freezing the LOD camera** (`/`, or the *Update LOD Camera* checkbox) is the single most
+useful debugging control: every view-dependent decision — Cluster LOD detail selection,
+tessellation rate, frustum culling, HiZ occlusion — locks to the current viewpoint while
+the render camera keeps moving, so you can fly around and look at what the renderer
+actually chose.
+
+---
+
+## Settings window
+
+Sections, top to bottom. A geometry section is greyed out when the loaded scene has no
+geometry of that kind; hover it to see why.
+
+- **Scene** — asset browser and data folder (above).
+- **Camera** — Reset Camera, Update LOD Camera, and the Camera Speed slider (log scale;
+  the mouse wheel drives it too).
+- **Rendering** — Shading Mode, Color Mode, Max Bounces, exposure and tonemapping,
+  wireframe and Micro Triangles View, Show Occlusion Depth, Max FPS / VSync, and the
+  environment map.
+- **Cluster LOD** — grouped into *Shading* (Vertex Normals, Shading Normals, Normal
+  Maps), *LOD / Culling* (LOD Pixel Error and its Adaptive checkbox, the Culling mode,
+  HiZ occlusion, Culled error scale) and *BLAS Reuse* (Sharing, Caching, Merging plus
+  their tail-level sliders). The **Bake Config** button at the top opens the bake
+  settings window. See [ClusterLOD.md](ClusterLOD.md) for what each control does.
+- **Cluster Tess** — Tess Pattern, Vertex Normals, the Frustum / HiZ / Backface
+  visibility predicates, Fine | Coarse Tess Rate, Tessellation Metric, Visibility Mode,
+  Global Isolation Level and Displacement Scale. See [ClusterTess.md](ClusterTess.md).
+- **Denoiser and Upscaling** — DLSS-RR on/off, DLSS mode, and what the output buffer
+  shows.
+
+---
+
+## Inspector
+
+<img src="./images/inspector.jpg" width="1534" alt="Inspector">
+
+**Right-click a surface in the viewport** to select its geometry. With *Highlight
+Selection* ticked the picked mesh is tinted in the viewport, and the Inspector scrolls to
+its row and expands it.
+
+**Selected Mesh** breaks the pick down two ways:
+
+- *Mesh Memory* — per channel (positions, normals, UVs), what is resident on the device
+  versus what the shard holds on disk. Positions read 0 B resident because they are
+  fetched straight out of the acceleration structure.
+- *Residency* — resident versus total groups, clusters, triangles, and how many bytes of
+  CLAS have been built.
+
+**Cluster LOD Meshes** lists every geometry in the scene, sortable by any column
+(resident %, resident memory, disk size, CLAS, groups, clusters, triangles), with a Total
+row at the top. Expanding a mesh shows one row per LOD level: how much of that level is
+resident, and what it costs. Coarse levels typically sit at 100% or read `cached` — they
+are cheap and always kept — while fine levels stream in and out as the camera moves.
+
+Subdivision scenes get a **Subdivision Meshes** section instead, with per-mesh surface,
+patch and sharpness counts.
+
+---
+
+## Profiler
+
+<img src="./images/profiler.png" width="758" alt="Profiler">
+
+Tabs appear only when the scene contains the relevant geometry:
+
+| tab | shows |
+| - | - |
+| **Frame** | Frame time graph plus an average breakdown: CPU and GPU frame, accel build, path tracing, motion vectors, denoiser, blit, and what is unaccounted for. |
+| **ClusterTess BVH** | Per-pass breakdown of the tessellation path's BVH build: tiling, fill, CLAS instantiation, BLAS build. |
+| **ClusterLOD BVH** | Per-pass breakdown of the Cluster LOD path's BVH build: traversal, BLAS builds, TLAS. |
+| **Memory** | GPU memory by category, with high-water marks. |
+| **Streaming** | Cluster LOD residency and transfer: pool occupancy, resident group and cluster counts, load/unload rates, and BLAS reuse statistics. |
+| **Subdivision Evaluator** | Topology-map data for the loaded subdivision meshes: surface tables and their memory cost, patch composition, and a warning when a mesh's topology is poor for evaluation. |
+
+The **Hz** pull-down in the top-right sets how often samples are recorded (`---Hz`
+records every frame). Hovering the graph gives exact per-timer numbers for that sample.
+
+If the CPU frame line sits above the GPU frame line, the frame is CPU-bound.
+
+---
+
+## VRAM Budget window
+
+<img src="./images/vram_budget.png" width="707" alt="VRAM Budget">
+
+The header names the card and its total VRAM, and the OS budget — how much of it this
+process is actually allowed. Three bars follow:
+
+- **Allocated** — VRAM the driver has handed over so far.
+- **Current Budget** — what the applied budgets permit.
+- **Pending Budget** — what the staged edits would permit.
+
+**Buckets** breaks both down per category — textures, the Cluster LOD geometry, CLAS,
+cached BLAS and metadata pools, BLAS scratch, render targets, and an *Unaccounted*
+remainder that covers DLSS, NVRHI and driver allocations the sample cannot attribute. The
+pools that track occupancy draw a fill bar; the rest just report a size.
+
+Below that are the editable budgets, grouped into **Textures**, **Cluster LOD** and
+**Cluster Tess**. Edits are staged, not live: changed fields highlight, and the footer
+says what **Apply** will do.
+
+- Pool budgets **reallocate and re-stream** without dropping the scene.
+- Texture budget and *Load Normal Maps* **reload the scene**, because they decide what is
+  read off disk. Apply asks for confirmation first.
+- **Revert** drops the staged edits.
+- **Reset streaming state** evicts everything and re-streams the current view with the
+  budgets already applied — a quick way to watch a scene stream in from scratch.
+
+See [ClusterLOD.md — Streaming budgets](ClusterLOD.md#streaming-budgets) for what each
+control bounds and its command-line equivalent.
+
+If a budget is too small for the frame, a red banner appears at the top of the viewport —
+*Render cluster budget exceeded*, *Tessellation memory budget exceeded* or *Traversal
+queue capacity exceeded* — with an **Adjust VRAM Budget** button that opens this window.
+Expect flickering until it is resolved.
+
+---
+
+## Bake Config window
+
+<img src="./images/bake_config.png" width="512" alt="Bake Config">
+
+Opened from the **Bake Config** button in the Settings window's Cluster LOD section, this
+edits how the LOD hierarchy is built: cluster and group sizes, the LOD node width,
+simplification weights, LOD error metric, meshoptimizer tuning, and vertex compression.
+The header shows which cache directory and `bake_config.json` the settings belong to.
+
+Changed fields are highlighted. **Apply** lists every delta and warns before committing,
+because new bake settings **invalidate the cluster cache** — the scene reloads and
+re-bakes, which on a large asset takes a while. Cancel discards the edits.
+
+After a bake the **Bake Report** window summarizes it: bake time, worker count, peak RAM
+delta, and before/after geometry stats when it replaced an existing cache.
+
+---
+
+## Learning more
+
+| topic | document |
+| - | - |
+| Cluster tessellation algorithm, cluster templates, frame pipeline | [ClusterTess.md](ClusterTess.md) |
+| Cluster LOD hierarchy, streaming, BLAS reuse, culling | [ClusterLOD.md](ClusterLOD.md) |
+| Validation, GPU crash dumps, diagnostic flags | [DEBUGGING.md](DEBUGGING.md) |
 
 ---
 
 ## Appendix
 
-References to the file format extensions supported by the sample application.
-
 ### OBJ extensions
 
-We are using an extended version of Autodesk's `OBJ` file format with a “tag” system
-to express all information specific to subdivision surfaces. A Maya export plugin
-could be made available upon request.
-
-> [!NOTE]
-> This is the same tagging system that is used in
-> [OpenSubdiv](https://graphics.pixar.com/opensubdiv/docs/intro.html)
-
-The tag syntax is as follows:
+RTX MG uses an extended version of Autodesk's OBJ format with a tag system for
+subdivision surface data. The tag syntax is:
 
 ```
- t <tag name> <num int args>/<num float args>/<num string args> <args> 
+t <tag name> <num int args>/<num float args>/<num string args> <args>
 ```
 
-Some examples:
+Examples:
+
 ```
-# select vertex boundary interpolation mode VTX_BOUNDARY_EDGE_AND_CORNER
-# 0 : VTX_BOUNDARY_NONE
-# 1 : VTX_BOUNDARY_EDGE_AND_CORNER
-# 2 : VTX_BOUNDARY_EDGE_ONLY
+# vertex boundary interpolation: VTX_BOUNDARY_EDGE_AND_CORNER
 t interpolateboundary 1/0/0 1
 
-# select face-varying boundary interpolation mode FVAR_LINEAR_ALL
-# 0 : FVAR_LINEAR_NONE
-# 1 : FVAR_LINEAR_CORNERS_ONLY
-# 2 : FVAR_LINEAR_CORNERS_PLUS1
-# 3 : FVAR_LINEAR_CORNERS_PLUS2
-# 4 : FVAR_LINEAR_BOUNDARIES
-# 5 : FVAR_LINEAR_ALL
+# face-varying boundary interpolation: FVAR_LINEAR_ALL
 t interpolateboundary 1/0/0 5
 
-# tag the edge defined by vertices '1' and '3' with a sharpness of 2.0
+# edge crease (vertices 1–3, sharpness 2.0)
 t crease 2/1/0 1 3 2.0
 
-# tag vertex '4' with a sharpness of 2.8
+# vertex corner (vertex 4, sharpness 2.8)
 t corner 1/1/0 4 2.8
 
-# set face '9' as a hole
+# hole face
 t hole 1/0/0 9
 
-# set the crease method to 'chaikin' (default is 'normal')
-t creasemethod 0/0/1 chaikin 
-
+# crease method
+t creasemethod 0/0/1 chaikin
 ```
+
+This is the same tagging system used by
+[OpenSubdiv](https://graphics.pixar.com/opensubdiv/docs/intro.html).
 
 ### MTL extensions
 
-The `OBJ` parser supports some of the physically based (PBR) materials
-[extensions](https://en.wikipedia.org/wiki/Wavefront_.obj_file#Physically-based_rendering).
-The path-tracer does not support transparent, transmissive or emissive materials
-though, so while they are parsed, they will not be used.
+The OBJ parser supports the physically based rendering (PBR) MTL extensions:
 
-Supported tags:
 ```
-Kd: albedo
-Ks: specular
-
-Pr: roughness
-Pm: metalness
-
-map_Kd: albedo map
-map_Ks: specular map
-map_Pr: roughness map
-
-# optional displacement scale & bias parameters
-map_Bump -bm <scale> -bb <bias> : displacement map
+Kd        albedo
+Ks        specular
+Pr        roughness
+Pm        metalness
+map_Kd    albedo map
+map_Ks    specular map
+map_Pr    roughness map
+map_Bump -bm <scale> -bb <bias>    displacement map
 ```
+
+Transparent, transmissive, and emissive materials are parsed but not rendered.
 
 ### UDIM workflows
 
-UDIM texture naming conventions are supported with the `<UDIM>` keyword.
-
-> [!IMPORTANT]
-> Our implementation has a limitation that does not allow UV islands to cross a
-> UDIM tile boundary and will cause the application to throw a fatal error on load.
+UDIM texture naming with the `<UDIM>` keyword is supported:
 
 ```
 map_Kd textures/asset_name_D.<UDIM>.dds
-map_Ks textures/asset_name_S.<UDIM>.dds
-map_Bump -bm 0.002000 textures/asset_name_H.<UDIM>.dds
-map_Pr textures/asset_name_R.<UDIM>.dds
 ```
 
-#### JSON scene files
+> [!IMPORTANT]
+> UV islands must not cross UDIM tile boundaries. A crossing face is bound to the tile
+> its first vertex lands in and logs a warning; the out-of-tile part samples the wrong
+> tile.
 
-Multiple assets can be combined to create simple scenes with Donut's JSON schema.
+### JSON scene files
 
-Scene files should carry the extension ‘.scene.json’ and must be placed under root of
-the ‘scenes’ folder (all asset paths are relative to the location of this file).
-
-For historical reasons, the format used by this sample application differs slightly
-from Donut's. Please consult the source code for details.
+Multiple assets can be combined with Donut's JSON scene format. Scene files carry the
+`.scene.json` extension and should be placed under the `assets/` root (all asset paths
+are relative to the scene file's location).
 
 > [!NOTE]
-> The `glTF` file format only supports triangle-based meshes and cannot represent
-> subdivision surfaces without extensions. Because of these limitations, it is
-> not supported in this sample application.
+> glTF/GLB models cannot represent subdivision surfaces, so a `.gltf` or `.glb` model
+> always takes the [Cluster LOD path](ClusterLOD.md), and a `.scene.json` that
+> references both file types renders each model on the path its format implies.

@@ -1,29 +1,34 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+ * property and proprietary rights in and to this material, related
+ * documentation and any modifications thereto. Any use, reproduction,
+ * disclosure or distribution of this material and related documentation
+ * without an express license agreement from NVIDIA CORPORATION or
+ * its affiliates is strictly prohibited.
  */
 
 #ifndef SHADER_DEBUG_H // using instead of "#pragma once" due to https://github.com/microsoft/DirectXShaderCompiler/issues/3943
 #define SHADER_DEBUG_H
 
-#define ENABLE_SHADER_DEBUG 0
+// Printf-style ring buffer for one predicated pixel / lane, dumped to the
+// console by -dp and by the tessellator debug indices.  Purely diagnostic --
+// the shipped right-click pick lives in pixel_pick.h -- so it can be compiled
+// out with -D RTXMG_SHADER_DEBUG=OFF (CMake) without losing a feature.
+//
+// Measured on the DXIL path-tracer library (lib_6_6, all four permutations):
+// =1 adds 169-182 instructions to ClosestHit and nothing anywhere else, and
+// leaves every entry point peak live-value count identical, so it does not
+// move the register budget the DXR pipeline takes from its worst entry point.
+//
+// =0 is diagnostic-only and NOT golden-gated: it drops the SHADER_DEBUG_INIT
+// that motion_vectors.hlsl relies on to pin FP association, which moves the
+// subdivision goldens (2.6 / 2.8).  See the comment at that call site.
+#ifndef ENABLE_SHADER_DEBUG
+#define ENABLE_SHADER_DEBUG 1
+#endif
 
 #ifdef __cplusplus
 #include <ostream>
@@ -98,127 +103,123 @@ struct ShaderDebugElement
 
 #ifndef __cplusplus
 #if ENABLE_SHADER_DEBUG
-struct ShaderDebugger
+
+// The shader names its own buffer via SHADER_DEBUG_BUFFER and it is passed by
+// parameter, never stored: in a raytracing library DXC leaves a stored
+// RWStructuredBuffer as a Private pointer-to-StorageBuffer without declaring
+// VariablePointersStorageBuffer, crashing the NV driver at pipeline creation.
+static uint3 g_ShaderDebugPredicateID;
+static uint3 g_ShaderDebugCurrentID;
+
+uint ShaderDebugAllocateSlot(RWStructuredBuffer<ShaderDebugElement> output)
 {
-    RWStructuredBuffer<ShaderDebugElement> output;
-    uint3 predicateID;
-    uint3 currentID;
+    uint bufferSize, bufferStride;
+    output.GetDimensions(bufferSize, bufferStride);
+    uint maxSize = bufferSize - 1;
 
-    uint AllocateSlot()
-    {
-        uint bufferSize, bufferStride;
-        output.GetDimensions(bufferSize, bufferStride);
-        uint maxSize = bufferSize - 1;
-
-        uint result;
-        InterlockedAdd(output[0].payloadType, 1, result);
-        return (result % maxSize) + 1;
-    }
-
-    void _ShaderDebug(float4 value, uint lineNumber, uint payloadType, bool checkPredicate)
-    {
-        if (!checkPredicate || all(predicateID == currentID))
-        {
-            ShaderDebugElement element = (ShaderDebugElement)0;
-            element.payloadType = payloadType;
-            element.lineNumber = lineNumber;
-            element.floatData = value;
-            element.uintData = 0;
-            output[AllocateSlot()] = element;
-        }
-    }
-    void _ShaderDebug(uint4 value, uint lineNumber, uint payloadType, bool checkPredicate)
-    {
-        if (!checkPredicate || all(predicateID == currentID))
-        {
-            ShaderDebugElement element = (ShaderDebugElement)0;
-            element.payloadType = payloadType;
-            element.lineNumber = lineNumber;
-            element.floatData = 0.f;
-            element.uintData = value;
-            output[AllocateSlot()] = element;
-        }
-    }
-
-    void ShaderDebug(uint4 value, uint lineNumber, bool checkPredicate = true)
-    {
-        _ShaderDebug(value, lineNumber, ShaderDebugElement::PayloadType_Uint4, checkPredicate);
-    }
-    void ShaderDebug(uint3 value, uint lineNumber, bool checkPredicate = true)
-    {
-        _ShaderDebug(uint4(value, 0), lineNumber, ShaderDebugElement::PayloadType_Uint3, checkPredicate);
-    }
-    void ShaderDebug(uint2 value, uint lineNumber, bool checkPredicate = true)
-    {
-        _ShaderDebug(uint4(value, 0, 0), lineNumber, ShaderDebugElement::PayloadType_Uint2, checkPredicate);
-    }
-    void ShaderDebug(uint value, uint lineNumber, bool checkPredicate = true)
-    {
-        _ShaderDebug(uint4(value, 0, 0, 0), lineNumber, ShaderDebugElement::PayloadType_Uint, checkPredicate);
-    }
-
-    void ShaderDebug(int4 value, uint lineNumber, bool checkPredicate = true)
-    {
-        _ShaderDebug(value, lineNumber, ShaderDebugElement::PayloadType_Int4, checkPredicate);
-    }
-    void ShaderDebug(int3 value, uint lineNumber, bool checkPredicate = true)
-    {
-        _ShaderDebug(uint4(value, 0), lineNumber, ShaderDebugElement::PayloadType_Int3, checkPredicate);
-    }
-    void ShaderDebug(int2 value, uint lineNumber, bool checkPredicate = true)
-    {
-        _ShaderDebug(uint4(value, 0, 0), lineNumber, ShaderDebugElement::PayloadType_Int2, checkPredicate);
-    }
-    void ShaderDebug(int value, uint lineNumber, bool checkPredicate = true)
-    {
-        _ShaderDebug(uint4(value, 0, 0, 0), lineNumber, ShaderDebugElement::PayloadType_Int, checkPredicate);
-    }
-
-    void ShaderDebug(float4 value, uint lineNumber, bool checkPredicate = true)
-    {
-        _ShaderDebug(value, lineNumber, ShaderDebugElement::PayloadType_Float4, checkPredicate);
-    }
-    void ShaderDebug(float3 value, uint lineNumber, bool checkPredicate = true)
-    {
-        _ShaderDebug(float4(value, 0), lineNumber, ShaderDebugElement::PayloadType_Float3, checkPredicate);
-    }
-    void ShaderDebug(float2 value, uint lineNumber, bool checkPredicate = true)
-    {
-        _ShaderDebug(float4(value, 0, 0), lineNumber, ShaderDebugElement::PayloadType_Float2, checkPredicate);
-    }
-    void ShaderDebug(float value, uint lineNumber, bool checkPredicate = true)
-    {
-        _ShaderDebug(float4(value, 0, 0, 0), lineNumber, ShaderDebugElement::PayloadType_Float, checkPredicate);
-    }
-};
-
-static ShaderDebugger g_ShaderDebugger;
-
-static void InitShaderDebugger(RWStructuredBuffer<ShaderDebugElement> output, uint3 predicateID, uint3 currentID)
-{
-    g_ShaderDebugger.output = output;
-    g_ShaderDebugger.predicateID = predicateID;
-    g_ShaderDebugger.currentID = currentID;
+    uint result;
+    InterlockedAdd(output[0].payloadType, 1, result);
+    return (result % maxSize) + 1;
 }
 
-static void InitShaderDebugger(RWStructuredBuffer<ShaderDebugElement> output, uint2 predicateID, uint2 currentID)
+void _ShaderDebug(RWStructuredBuffer<ShaderDebugElement> output, float4 value, uint lineNumber, uint payloadType)
 {
-    InitShaderDebugger(output, uint3(predicateID, 0), uint3(currentID, 0));
+    if (all(g_ShaderDebugPredicateID == g_ShaderDebugCurrentID))
+    {
+        ShaderDebugElement element = (ShaderDebugElement)0;
+        element.payloadType = payloadType;
+        element.lineNumber = lineNumber;
+        element.floatData = value;
+        element.uintData = 0;
+        output[ShaderDebugAllocateSlot(output)] = element;
+    }
+}
+void _ShaderDebug(RWStructuredBuffer<ShaderDebugElement> output, uint4 value, uint lineNumber, uint payloadType)
+{
+    if (all(g_ShaderDebugPredicateID == g_ShaderDebugCurrentID))
+    {
+        ShaderDebugElement element = (ShaderDebugElement)0;
+        element.payloadType = payloadType;
+        element.lineNumber = lineNumber;
+        element.floatData = 0.f;
+        element.uintData = value;
+        output[ShaderDebugAllocateSlot(output)] = element;
+    }
 }
 
-static void InitShaderDebugger(RWStructuredBuffer<ShaderDebugElement> output, uint predicateID, uint currentID)
+void ShaderDebug(RWStructuredBuffer<ShaderDebugElement> output, uint4 value, uint lineNumber)
 {
-    InitShaderDebugger(output, uint3(predicateID, 0, 0), uint3(currentID, 0, 0));
+    _ShaderDebug(output, value, lineNumber, ShaderDebugElement::PayloadType_Uint4);
+}
+void ShaderDebug(RWStructuredBuffer<ShaderDebugElement> output, uint3 value, uint lineNumber)
+{
+    _ShaderDebug(output, uint4(value, 0), lineNumber, ShaderDebugElement::PayloadType_Uint3);
+}
+void ShaderDebug(RWStructuredBuffer<ShaderDebugElement> output, uint2 value, uint lineNumber)
+{
+    _ShaderDebug(output, uint4(value, 0, 0), lineNumber, ShaderDebugElement::PayloadType_Uint2);
+}
+void ShaderDebug(RWStructuredBuffer<ShaderDebugElement> output, uint value, uint lineNumber)
+{
+    _ShaderDebug(output, uint4(value, 0, 0, 0), lineNumber, ShaderDebugElement::PayloadType_Uint);
 }
 
-#define SHADER_DEBUG(value) g_ShaderDebugger.ShaderDebug(value, __LINE__)
-#define SHADER_DEBUG_FORCE(value) g_ShaderDebugger.ShaderDebug(value, __LINE__, false)
-#define SHADER_DEBUG_INIT(outputBuffer, predicateID, currentID) InitShaderDebugger(outputBuffer, predicateID, currentID)
+void ShaderDebug(RWStructuredBuffer<ShaderDebugElement> output, int4 value, uint lineNumber)
+{
+    _ShaderDebug(output, value, lineNumber, ShaderDebugElement::PayloadType_Int4);
+}
+void ShaderDebug(RWStructuredBuffer<ShaderDebugElement> output, int3 value, uint lineNumber)
+{
+    _ShaderDebug(output, uint4(value, 0), lineNumber, ShaderDebugElement::PayloadType_Int3);
+}
+void ShaderDebug(RWStructuredBuffer<ShaderDebugElement> output, int2 value, uint lineNumber)
+{
+    _ShaderDebug(output, uint4(value, 0, 0), lineNumber, ShaderDebugElement::PayloadType_Int2);
+}
+void ShaderDebug(RWStructuredBuffer<ShaderDebugElement> output, int value, uint lineNumber)
+{
+    _ShaderDebug(output, uint4(value, 0, 0, 0), lineNumber, ShaderDebugElement::PayloadType_Int);
+}
+
+void ShaderDebug(RWStructuredBuffer<ShaderDebugElement> output, float4 value, uint lineNumber)
+{
+    _ShaderDebug(output, value, lineNumber, ShaderDebugElement::PayloadType_Float4);
+}
+void ShaderDebug(RWStructuredBuffer<ShaderDebugElement> output, float3 value, uint lineNumber)
+{
+    _ShaderDebug(output, float4(value, 0), lineNumber, ShaderDebugElement::PayloadType_Float3);
+}
+void ShaderDebug(RWStructuredBuffer<ShaderDebugElement> output, float2 value, uint lineNumber)
+{
+    _ShaderDebug(output, float4(value, 0, 0), lineNumber, ShaderDebugElement::PayloadType_Float2);
+}
+void ShaderDebug(RWStructuredBuffer<ShaderDebugElement> output, float value, uint lineNumber)
+{
+    _ShaderDebug(output, float4(value, 0, 0, 0), lineNumber, ShaderDebugElement::PayloadType_Float);
+}
+
+static void InitShaderDebugger(uint3 predicateID, uint3 currentID)
+{
+    g_ShaderDebugPredicateID = predicateID;
+    g_ShaderDebugCurrentID = currentID;
+}
+
+static void InitShaderDebugger(uint2 predicateID, uint2 currentID)
+{
+    InitShaderDebugger(uint3(predicateID, 0), uint3(currentID, 0));
+}
+
+static void InitShaderDebugger(uint predicateID, uint currentID)
+{
+    InitShaderDebugger(uint3(predicateID, 0, 0), uint3(currentID, 0, 0));
+}
+
+#define SHADER_DEBUG(value) ShaderDebug(SHADER_DEBUG_BUFFER, value, __LINE__)
+#define SHADER_DEBUG_INIT(predicateID, currentID) InitShaderDebugger(predicateID, currentID)
 
 #else
-#define SHADER_DEBUG(value) 
-#define SHADER_DEBUG_FORCE(value)
-#define SHADER_DEBUG_INIT(outputBuffer, predicateID, currentID)
+#define SHADER_DEBUG(value)
+#define SHADER_DEBUG_INIT(predicateID, currentID)
 #endif
 
 #endif // __cplusplus
