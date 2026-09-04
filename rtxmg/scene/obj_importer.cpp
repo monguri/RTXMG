@@ -111,11 +111,6 @@ std::optional<Model> ObjImporter::Load(const fs::path& fileName, TextureCache& t
     }
     else
     {
-        if (fp.extension() == ".eddbin")
-        {
-            log::warning("EDDBin files are not supported by the ObjImporter");
-            return {};
-        }
         if (nframes == 1)
         {
             shape = Shape::LoadObjFile(fp.string().c_str());

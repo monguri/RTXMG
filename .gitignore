@@ -8,3 +8,4 @@ build*/
 .claude/
 .clangd
 _nvsngeocache/
+__pycache__/

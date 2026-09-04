@@ -698,7 +698,7 @@ std::ifstream& operator>>(std::ifstream& is, Shape::tag& t)
 void Shape::WriteShape(const std::string& objFile) const
 {
     using namespace std::chrono;
-    fs::path cacheFile = fs::path(objFile).replace_extension(".bin");
+    fs::path cacheFile = fs::path(objFile).replace_extension(".subdcache");
 
     if (std::ofstream os(cacheFile, std::ios::out | std::ofstream::binary); os.is_open())
     {
@@ -731,7 +731,7 @@ bool Shape::ReadShape(const std::string& objFile)
 
     system_clock::duration::rep objFileTimeStamp = (fs::last_write_time(objFile).time_since_epoch() + version).count();
 
-    fs::path cacheFile = fs::path(objFile).replace_extension(".bin");
+    fs::path cacheFile = fs::path(objFile).replace_extension(".subdcache");
 
     if (std::ifstream is(cacheFile, std::ios::in | std::ofstream::binary); is.is_open())
     {
@@ -739,7 +739,7 @@ bool Shape::ReadShape(const std::string& objFile)
 
         readTrivial(is, binFileTimStamp);
 
-        // if timestamp stored in .bin doesn't match the .obj's timestamp return false
+        // if timestamp stored in the cache doesn't match the .obj's timestamp return false
         // i.e. read/load the .obj file instead
         if (binFileTimStamp == objFileTimeStamp)
         {

@@ -93,14 +93,20 @@ install(DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders" DESTINATION "bin" 
 if(WIN32)
     install(FILES $<TARGET_RUNTIME_DLLS:${app}> DESTINATION "bin")
 
-    # generate some shortcuts to run various scenes
+    # generate some shortcuts to run various scenes; a relative -mf resolves under assets/
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/run_rtxmg.bat" "start \"\" bin/rtxmg_demo.exe")
     install(FILES "${CMAKE_CURRENT_BINARY_DIR}/run_rtxmg.bat" DESTINATION ".")
 
-    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/run_amy_kitchenset.bat" "start \"\" bin/rtxmg_demo.exe -mf amy_kitchenset.scene.json")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/run_abeautifulgame.bat" "start \"\" bin/rtxmg_demo.exe -mf cluster_lod/ABeautifulGame/glTF/ABeautifulGame.gltf")
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/run_abeautifulgame.bat" DESTINATION ".")
+
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/run_amy_abeautifulgame.bat" "start \"\" bin/rtxmg_demo.exe -mf subdivision/amy_abeautifulgame.scene.json")
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/run_amy_abeautifulgame.bat" DESTINATION ".")
+
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/run_amy_kitchenset.bat" "start \"\" bin/rtxmg_demo.exe -mf subdivision/amy_kitchenset.scene.json")
     install(FILES "${CMAKE_CURRENT_BINARY_DIR}/run_amy_kitchenset.bat" DESTINATION ".")
 
-    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/run_barbarian.bat" "start \"\" bin/rtxmg_demo.exe -mf barbarian_pt.scene.json")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/run_barbarian.bat" "start \"\" bin/rtxmg_demo.exe -mf subdivision/barbarian_pt.scene.json")
     install(FILES "${CMAKE_CURRENT_BINARY_DIR}/run_barbarian.bat" DESTINATION ".")
 
     set(_os "win64")
@@ -116,7 +122,9 @@ if(IS_DIRECTORY "${PROJECT_SOURCE_DIR}/assets")
     install(
         DIRECTORY "${PROJECT_SOURCE_DIR}/assets" 
         DESTINATION "." 
-        PATTERN "*.bin" EXCLUDE)
+        PATTERN ".git*" EXCLUDE
+        REGEX "\\.subdcache$" EXCLUDE
+        REGEX "nvsngeo" EXCLUDE)
 endif()
 
 set(CPACK_GENERATOR "ZIP")

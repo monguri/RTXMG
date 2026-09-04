@@ -3593,10 +3593,6 @@ std::array<char const*, 5> UIData::formatFilters() const
     if (includeGltfAssets)
         filters[idx++] = ".gltf";
 
-    //Future: include unstructured assets
-    //if (includeEddAssets)
-    //    filters[idx++] = ".eddbin";
-
     assert(filters.back() == nullptr);
 
     return filters;
