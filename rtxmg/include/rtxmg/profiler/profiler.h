@@ -1,29 +1,14 @@
-//
-// Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions
-// are met:
-//  * Redistributions of source code must retain the above copyright
-//    notice, this list of conditions and the following disclaimer.
-//  * Redistributions in binary form must reproduce the above copyright
-//    notice, this list of conditions and the following disclaimer in the
-//    documentation and/or other materials provided with the distribution.
-//  * Neither the name of NVIDIA CORPORATION nor the names of its
-//    contributors may be used to endorse or promote products derived
-//    from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-// PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
-// CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-// EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-// PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
-// OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+ *
+ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+ * property and proprietary rights in and to this material, related
+ * documentation and any modifications thereto. Any use, reproduction,
+ * disclosure or distribution of this material and related documentation
+ * without an express license agreement from NVIDIA CORPORATION or
+ * its affiliates is strictly prohibited.
+ */
 //
 
 // clang-format off
@@ -94,7 +79,7 @@ class Profiler
     static Profiler& Get();
 
     // force the immediate release all device resources
-    void Terminate();
+    static void Terminate();
 
     // frequency < 0 : profile every frame (benchmark mode)
     // frequency == 0 : disable profiling
@@ -138,6 +123,10 @@ class Profiler
     template <typename timer_type>
     static inline timer_type& InitTimer( char const* name );
 
+    // Timer enumeration for --dump-stats.
+    std::vector<std::unique_ptr<CPUTimer>> const& GetCPUTimers() const { return m_cpuTimers; }
+    std::vector<std::unique_ptr<GPUTimer>> const& GetGPUTimers() const { return m_gpuTimers; }
+
   private:
     Profiler() noexcept         = default;
     Profiler( Profiler const& ) = delete;
@@ -162,3 +151,20 @@ inline timer_type& Profiler::InitTimer( char const* name )
     else if constexpr( std::is_same_v<timer_type, GPUTimer> )
         return *profiler.m_gpuTimers.emplace_back( std::make_unique<GPUTimer>( name ) );
 }
+
+class ScopedGPUTimer
+{
+public:
+    ScopedGPUTimer(Profiler::Timer<StopwatchGPU>& timer, nvrhi::ICommandList *commandlist) : m_timer(timer) 
+    {
+        m_timer.Start(commandlist);
+    }
+
+    ~ScopedGPUTimer()
+    {
+        m_timer.Stop();
+    }
+
+private:
+    Profiler::Timer<StopwatchGPU>& m_timer;
+};

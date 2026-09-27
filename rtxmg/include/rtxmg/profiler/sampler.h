@@ -1,37 +1,25 @@
-//
-// Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions
-// are met:
-//  * Redistributions of source code must retain the above copyright
-//    notice, this list of conditions and the following disclaimer.
-//  * Redistributions in binary form must reproduce the above copyright
-//    notice, this list of conditions and the following disclaimer in the
-//    documentation and/or other materials provided with the distribution.
-//  * Neither the name of NVIDIA CORPORATION nor the names of its
-//    contributors may be used to endorse or promote products derived
-//    from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-// PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
-// CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-// EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-// PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
-// OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+ *
+ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+ * property and proprietary rights in and to this material, related
+ * documentation and any modifications thereto. Any use, reproduction,
+ * disclosure or distribution of this material and related documentation
+ * without an express license agreement from NVIDIA CORPORATION or
+ * its affiliates is strictly prohibited.
+ */
 //
 
 // clang-format off
 
 #pragma once
 
+#include <algorithm>
 #include <array>
+#include <limits>
 #include <string>
+#include <vector>
 
 // clang-format on
 
@@ -57,7 +45,19 @@ struct Sampler : public std::array<T, _size>
 
     void Reset();
 
-    T Median() const { return .5f * ( double( max ) - double( min ) ); }
+    // Over the retained window, not the whole history: only the last _size
+    // samples are still around to sort.
+    T Median() const { return Percentile( 0.5 ); }
+    T Percentile( double p ) const
+    {
+        const size_t n = std::min( _size, samples_count );
+        if( n == 0 )
+            return T( 0 );
+        std::vector<T> sorted( this->begin(), this->begin() + n );
+        const size_t   k = std::min( n - 1, size_t( p * double( n ) ) );
+        std::nth_element( sorted.begin(), sorted.begin() + k, sorted.end() );
+        return sorted[k];
+    }
     T Average() const { return static_cast<T>( double( total ) / double( samples_count ) ); }
     T RunningAverage() const
     {
@@ -104,8 +104,8 @@ inline void Sampler<T, _size>::Reset()
     latest        = {};
     samples_sum   = T( 0 );
     min           = std::numeric_limits<T>::max();
-    max           = std::numeric_limits<T>::min();
+    max           = std::numeric_limits<T>::lowest();
 #if !defined( NDEBUG )
-    fill( T( 0 ) );
+    this->fill( T( 0 ) );
 #endif
 }

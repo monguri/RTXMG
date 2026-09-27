@@ -1,44 +1,73 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+ * property and proprietary rights in and to this material, related
+ * documentation and any modifications thereto. Any use, reproduction,
+ * disclosure or distribution of this material and related documentation
+ * without an express license agreement from NVIDIA CORPORATION or
+ * its affiliates is strictly prohibited.
  */
 #pragma once
+
+#ifdef __cplusplus
+#include <cstdint>
+#endif
 
 enum class ShadingMode { PRIMARY_RAYS = 0, AO, PT, SHADING_MODE_COUNT };
 
 enum class ColorMode
 {
     BASE_COLOR = 0,
-    COLOR_BY_NORMAL,
+    COLOR_BY_SHADING_NORMAL,
     // Shading modes that only work for true cluster builds start here
     COLOR_BY_TEXCOORD,
     COLOR_BY_MATERIAL,
-    COLOR_BY_GEOMETRY_INDEX,
     COLOR_BY_SURFACE_INDEX,
     COLOR_BY_CLUSTER_ID,
     COLOR_BY_MICROTRI_ID,
     COLOR_BY_CLUSTER_UV,
     COLOR_BY_MICROTRI_AREA,
     COLOR_BY_TOPOLOGY,
+    // cluster-LOD-specific debug modes
+    COLOR_BY_LOD_LEVEL,
+    COLOR_BY_CLUSTER_GROUP,
+    COLOR_BY_BLAS_SOURCE,
+    COLOR_BY_BLAS_CACHED,
     COLOR_MODE_COUNT
 };
+
+#ifdef __cplusplus
+// Which geometry path can actually render each colour mode.  A mode outside the
+// scene's live paths shades flat grey, so the UI groups on this and the cycle
+// key skips modes no live path serves.  Host-only: the shader switches on
+// colorMode directly.
+enum ColorModePath : uint32_t
+{
+    kColorModeClusterLod  = 1u,
+    kColorModeClusterTess = 2u,
+    kColorModeAnyPath     = kColorModeClusterLod | kColorModeClusterTess,
+};
+
+inline uint32_t GetColorModePaths(ColorMode mode)
+{
+    switch (mode)
+    {
+    case ColorMode::COLOR_BY_SURFACE_INDEX:
+    case ColorMode::COLOR_BY_MICROTRI_AREA:
+    case ColorMode::COLOR_BY_TOPOLOGY:
+        return kColorModeClusterTess;
+    case ColorMode::COLOR_BY_LOD_LEVEL:
+    case ColorMode::COLOR_BY_CLUSTER_GROUP:
+    case ColorMode::COLOR_BY_BLAS_SOURCE:
+    case ColorMode::COLOR_BY_BLAS_CACHED:
+        return kColorModeClusterLod;
+    default:
+        return kColorModeAnyPath;
+    }
+}
+#endif  // __cplusplus
 
 enum class TonemapOperator
 {
@@ -81,16 +110,19 @@ enum class DenoiserMode
 constexpr auto kColorModeNames = std::to_array<const char *>(
 {
     "Base Color",
-    "Surface Normal",
+    "Shading Normal",
     "Tex Coord",
     "Material",
-    "Geometry Index",
     "Surface Index",
     "Cluster ID",
     "MicroTri ID",
     "Cluster UV",
     "MicroTri Area",
-    "Topology Quality"
+    "Topology Quality",
+    "LOD Level",
+    "Cluster Group",
+    "BLAS Source",
+    "BLAS Cached"
 });
 static_assert(kColorModeNames.size() == size_t(ColorMode::COLOR_MODE_COUNT));
 

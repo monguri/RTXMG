@@ -1,29 +1,14 @@
-//
-// Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions
-// are met:
-//  * Redistributions of source code must retain the above copyright
-//    notice, this list of conditions and the following disclaimer.
-//  * Redistributions in binary form must reproduce the above copyright
-//    notice, this list of conditions and the following disclaimer in the
-//    documentation and/or other materials provided with the distribution.
-//  * Neither the name of NVIDIA CORPORATION nor the names of its
-//    contributors may be used to endorse or promote products derived
-//    from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-// PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
-// CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-// EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-// PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
-// OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+ *
+ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+ * property and proprietary rights in and to this material, related
+ * documentation and any modifications thereto. Any use, reproduction,
+ * disclosure or distribution of this material and related documentation
+ * without an express license agreement from NVIDIA CORPORATION or
+ * its affiliates is strictly prohibited.
+ */
 //
 
 #include "rtxmg/subdivision/subdivision_surface.h"
@@ -45,6 +30,7 @@
 #include <algorithm>
 #include <numeric>
 #include <ranges>
+#include <span>
 
 // clang-format on
 
@@ -357,7 +343,7 @@ SubdivisionSurface::SubdivisionSurface(TopologyCache& topologyCache,
         Tmr::TopologyMap::Traits traits;
         traits.SetCompatible(schemeType, schemeOptions, endCaps);
 
-        m_topology_map = &topologyCache.get(traits.value());
+        m_topology_map = &topologyCache.get(traits.value);
     }
 
     Tmr::TopologyMap& topologyMap = *m_topology_map->aTopologyMap;
@@ -445,12 +431,31 @@ SubdivisionSurface::SubdivisionSurface(TopologyCache& topologyCache,
         m_positionsPrevDescriptor = descriptorTable->CreateDescriptorHandle(nvrhi::BindingSetItem::StructuredBuffer_SRV(0, m_positionsPrevBuffer));
     }
 
-    m_surfaceToGeometryIndexDescriptor = descriptorTable->CreateDescriptorHandle(nvrhi::BindingSetItem::StructuredBuffer_SRV(0, m_surfaceToGeometryIndexBuffer));
 }
 
 uint32_t SubdivisionSurface::NumVertices() const
 {
     return static_cast<uint32_t>(m_positionsBuffer->getDesc().byteSize / sizeof(float3));
+}
+
+void SubdivisionSurface::BuildSurfaceToMaterialIndex(
+    std::span<const uint32_t> subshapeMaterialIndices,
+    nvrhi::ICommandList* commandList,
+    std::shared_ptr<donut::engine::DescriptorTableManager> descriptorTable)
+{
+    assert(!m_surfaceToGeometryIndexCpu.empty());
+    assert(subshapeMaterialIndices.size() > *std::max_element(
+        m_surfaceToGeometryIndexCpu.begin(), m_surfaceToGeometryIndexCpu.end()));
+
+    std::vector<uint32_t> surfaceToMaterialIndex(m_surfaceToGeometryIndexCpu.size());
+    for (size_t i = 0; i < m_surfaceToGeometryIndexCpu.size(); ++i)
+        surfaceToMaterialIndex[i] = subshapeMaterialIndices[m_surfaceToGeometryIndexCpu[i]];
+
+    m_surfaceToMaterialIndexBuffer = CreateAndUploadBuffer<uint32_t>(
+        surfaceToMaterialIndex, "surfaceToMaterialIndex", commandList);
+
+    m_surfaceToMaterialIndexDescriptor = descriptorTable->CreateDescriptorHandle(
+        nvrhi::BindingSetItem::StructuredBuffer_SRV(0, m_surfaceToMaterialIndexBuffer));
 }
 
 uint32_t SubdivisionSurface::SurfaceCount() const
@@ -600,7 +605,7 @@ void SubdivisionSurface::InitDeviceData(nvrhi::ICommandList* commandList)
     m_vertexDeviceData.patchPointsOffsets = CreateAndUploadBuffer<uint32_t>(
         patchPointsOffsets, "patch points offsets", commandList);
 
-    m_surfaceToGeometryIndexBuffer = CreateAndUploadBuffer<uint16_t>(surfaceToGeometryIndex, "surfaceToGeometryIndex", commandList);
+    m_surfaceToGeometryIndexCpu = surfaceToGeometryIndex; // keep CPU copy for BuildSurfaceToMaterialIndex
 
     m_texcoordDeviceData.surfaceDescriptors =
         CreateAndUploadBuffer<Tmr::LinearSurfaceDescriptor>(

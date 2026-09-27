@@ -18,3 +18,90 @@ requires proper acknowledgment;
 https://www.nvidia.com/content/dam/en-zz/Solutions/about-us/documents/NVIDIA-Trademark-and-Logo-Usage-Guidelines.pdf
 
 
+--------------------------------------------------------------------------------
+THIRD-PARTY AND SEPARATELY LICENSED SOFTWARE
+--------------------------------------------------------------------------------
+
+This sample includes, links against, or derives from the components below.
+
+SOURCE INCLUDED IN THIS REPOSITORY (UNDER ITS OWN LICENCE)
+----------------------------------------------------------
+
+Each component below remains under the licence shown; it is not superseded by
+RTXMG's.
+
+MakeID
+  Emil Persson.  Public domain.
+  https://www.humus.name/3D/MakeID.h (v1.02)
+  rtxmg::IDPool (rtxmg/utils/id_pool.{h,cpp}) is based on it; the licence
+  notice is at the top of MakeID.h.
+
+meshopt_clusterlod
+  Copyright (c) 2016-2025 Arseny Kapoulkine.  MIT.
+  https://github.com/zeux/meshoptimizer
+  Vendored as rtxmg/cluster_lod/baking/meshopt_clusterlod.h; the licence text
+  is inside that file.
+
+OffsetAllocator
+  (C) Sebastian Aaltonen 2023.  MIT.
+  https://github.com/sebbbi/OffsetAllocator
+  Vendored verbatim as rtxmg/utils/offset_allocator.{h,cpp}; the licence text
+  is in rtxmg/utils/OFFSET_ALLOCATOR_LICENSE.
+
+Open Iconic
+  Copyright (c) 2014 Waybury.  MIT.
+  https://www.useiconic.com/open
+  TTF data embedded in demo/gui_fonts.cpp; the licence text is alongside it.
+
+OpenSubdiv
+  Copyright Pixar.  Apache-2.0 with the Pixar trademark modification.
+  https://github.com/PixarAnimationStudios/OpenSubdiv
+  rtxmg/subdivision/far.h and rtxmg/subdivision/osd_ports/ derive from it and
+  carry the upstream header.
+
+self-intersection avoidance
+  Copyright (c) 2023 NVIDIA CORPORATION & AFFILIATES.  BSD-3-Clause.
+  demo/shaders/self_intersection_avoidance.hlsli carries the upstream header.
+
+SOURCE INCLUDED IN THIS REPOSITORY (RELICENSED BY NVIDIA)
+---------------------------------------------------------
+
+NVIDIA holds the copyright to these and has relicensed them under RTXMG's own
+licence.  Listed for provenance; no separate licence terms attach.
+
+nvpro_core2
+  Copyright NVIDIA CORPORATION.  Apache-2.0 upstream, MIT here.
+  https://github.com/nvpro-samples/nvpro_core2
+  rtxmg/utils/{alignment.h, id_pool.*, buffer_sub_allocator.*, file_mapping.*}
+  derive from it.
+
+vk_lod_clusters (nvpro-samples)
+  Copyright NVIDIA CORPORATION.  Apache-2.0 upstream, MIT here.
+  https://github.com/nvpro-samples/vk_lod_clusters
+  The cluster-LOD streaming runtime, its shaders, and the baker are ports of
+  it.
+
+FETCHED AT CONFIGURE TIME
+-------------------------
+
+D3D12 Agility SDK      Microsoft.Direct3D.D3D12 1.614.1             Microsoft redistributable
+DirectX Shader Compiler https://github.com/microsoft/DirectXShaderCompiler
+meshoptimizer v1.1     https://github.com/zeux/meshoptimizer        MIT
+mimalloc v2.1.7        https://github.com/microsoft/mimalloc        MIT
+NVIDIA Nsight Aftermath                                             NVIDIA SDK licence
+NVIDIA NVAPI                                                        NVIDIA SDK licence
+NVIDIA Streamline v2.8.0 https://github.com/NVIDIA-RTX/Streamline   MIT
+
+SUBMODULES
+----------
+
+Donut / NVRHI          https://github.com/NVIDIA-RTX/Donut          MIT
+OSD-Lite               https://github.com/NVIDIA-RTX/OSD-Lite       Apache-2.0 (Pixar)
+
+LINKED WHEN AVAILABLE
+---------------------
+
+Dear ImGui / ImPlot    linked through Donut; see Donut's own notices.
+
+FAudio                 https://github.com/FNA-XNA/FAudio            zlib
+  Resolved from the system when present; not redistributed here.

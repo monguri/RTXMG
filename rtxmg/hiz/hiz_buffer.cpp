@@ -1,29 +1,14 @@
-//
-// Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions
-// are met:
-//  * Redistributions of source code must retain the above copyright
-//    notice, this list of conditions and the following disclaimer.
-//  * Redistributions in binary form must reproduce the above copyright
-//    notice, this list of conditions and the following disclaimer in the
-//    documentation and/or other materials provided with the distribution.
-//  * Neither the name of NVIDIA CORPORATION nor the names of its
-//    contributors may be used to endorse or promote products derived
-//    from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-// PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
-// CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-// EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-// PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
-// OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+ *
+ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+ * property and proprietary rights in and to this material, related
+ * documentation and any modifications thereto. Any use, reproduction,
+ * disclosure or distribution of this material and related documentation
+ * without an express license agreement from NVIDIA CORPORATION or
+ * its affiliates is strictly prohibited.
+ */
 //
 
 
@@ -116,15 +101,6 @@ std::unique_ptr<HiZBuffer> HiZBuffer::Create(uint2 size,
     hiz->m_displayParamsBuffer = device->createBuffer(nvrhi::utils::CreateVolatileConstantBufferDesc(
         sizeof(HiZDisplayParams), "HiZDisplayParams", engine::c_MaxRenderPassConstantBufferVersions));
 
-    hiz->m_debugBuffer.Create(65536, "HiZDebug", device);
-    auto debugBindingSetDesc = nvrhi::BindingSetDesc()
-        .addItem(nvrhi::BindingSetItem::StructuredBuffer_UAV(0, hiz->m_debugBuffer));
-
-    if (!nvrhi::utils::CreateBindingSetAndLayout(device, nvrhi::ShaderType::Compute, 1, debugBindingSetDesc, hiz->m_debugBL, hiz->m_debugBS))
-    {
-        log::fatal("Failed to create binding set and layout for hiz debug");
-    }
-
     return hiz;
 }
 
@@ -137,21 +113,32 @@ void HiZBuffer::Display(nvrhi::ITexture* output, nvrhi::ICommandList* commandLis
 
     auto device = commandList->getDevice();
 
-    auto bindingSetDesc = GetDesc()
+    nvrhi::BindingLayoutDesc bindingLayoutDesc;
+    nvrhi::BindingSetDesc bindingSetDesc;
+    GetDesc(&bindingLayoutDesc, &bindingSetDesc, false);
+    bindingLayoutDesc
+        // m_displayParamsBuffer is volatile, so the layout must say so for nvrhi to
+        // bind it as a root CBV re-patched per writeBuffer version.
+        .addItem(nvrhi::BindingLayoutItem::VolatileConstantBuffer(0))
+        .addItem(nvrhi::BindingLayoutItem::Texture_UAV(0))
+        .setVisibility(nvrhi::ShaderType::Compute);
+    bindingSetDesc
         .addItem(nvrhi::BindingSetItem::ConstantBuffer(0, m_displayParamsBuffer))
         .addItem(nvrhi::BindingSetItem::Texture_UAV(0, output));
 
-    // need to write *something* to the constant buffer before we set up the compute state
-    HiZDisplayParams params;
-    params.level = 0;
-    params.offsetX = offset.x;
-    params.offsetY = offset.y;
-    commandList->writeBuffer(m_displayParamsBuffer, &params, sizeof(params));
-
-    nvrhi::BindingSetHandle bindingSet;
-    if (!nvrhi::utils::CreateBindingSetAndLayout(device, nvrhi::ShaderType::Compute, 0, bindingSetDesc, m_displayBL, bindingSet))
+    if (!m_displayBL)
     {
-        log::fatal("Failed to create binding set and layout for hiz display");
+        m_displayBL = device->createBindingLayout(bindingLayoutDesc);
+        if (!m_displayBL)
+        {
+            log::fatal("Failed to create binding layout for hiz display");
+        }
+    }
+
+    nvrhi::BindingSetHandle bindingSet = device->createBindingSet(bindingSetDesc, m_displayBL);
+    if (!bindingSet)
+    {
+        log::fatal("Failed to create binding set for hiz display");
     }
 
     if (!m_displayPSO)
@@ -162,12 +149,10 @@ void HiZBuffer::Display(nvrhi::ITexture* output, nvrhi::ICommandList* commandLis
 
         m_displayPSO = device->createComputePipeline(computePipelineDesc);
     }
-    
+
     auto state = nvrhi::ComputeState()
         .setPipeline(m_displayPSO)
         .addBindingSet(bindingSet);
-
-    commandList->setComputeState(state);
 
     for (uint8_t level = 0; level < HIZ_MAX_LODS; level++)
     {
@@ -185,30 +170,39 @@ void HiZBuffer::Display(nvrhi::ITexture* output, nvrhi::ICommandList* commandLis
         params.level = level;
         params.offsetX = offset.x;
         params.offsetY = offset.y;
+        // Each writeBuffer to a volatile CB makes a new version, so setComputeState
+        // has to be re-issued inside the loop to bind that version's CBV.
         commandList->writeBuffer(m_displayParamsBuffer, &params, sizeof(params));
-
+        commandList->setComputeState(state);
         commandList->dispatch(numBlocks.x, numBlocks.y);
 
         offset.x += extent.x + spacing;
     }
 }
 
-nvrhi::BindingSetDesc HiZBuffer::GetDesc(bool writeable) const
+void HiZBuffer::GetDesc(nvrhi::BindingLayoutDesc* outBindingLayout, nvrhi::BindingSetDesc* outBindingSet, bool writeable) const
 {
-    nvrhi::BindingSetDesc ret = nvrhi::BindingSetDesc();
+    *outBindingLayout = nvrhi::BindingLayoutDesc();
+    *outBindingSet = nvrhi::BindingSetDesc();
 
-    for (uint i = 0; i < HIZ_MAX_LODS; ++i)
+    if (writeable)
     {
-        if (writeable)
+        outBindingLayout->addItem(nvrhi::BindingLayoutItem::Texture_UAV(0).
+            setSize(HIZ_MAX_LODS));
+        for (uint32_t i = 0; i < HIZ_MAX_LODS; ++i)
         {
-            ret.addItem(nvrhi::BindingSetItem::Texture_UAV(i, textureObjects[i]));
-        }
-        else
-        {
-            ret.addItem(nvrhi::BindingSetItem::Texture_SRV(i, textureObjects[i]));
+            outBindingSet->addItem(nvrhi::BindingSetItem::Texture_UAV(0, textureObjects[i]).setArrayElement(i));
         }
     }
-    return ret;
+    else
+    {
+        outBindingLayout->addItem(nvrhi::BindingLayoutItem::Texture_SRV(0).
+            setSize(HIZ_MAX_LODS));
+        for (uint32_t i = 0; i < HIZ_MAX_LODS; ++i)
+        {
+            outBindingSet->addItem(nvrhi::BindingSetItem::Texture_SRV(0, textureObjects[i]).setArrayElement(i));
+        }
+    }
 }
 
 void HiZBuffer::Reduce(nvrhi::ITexture* zbuffer, nvrhi::ICommandList* commandList)
@@ -234,23 +228,39 @@ void HiZBuffer::Reduce(nvrhi::ITexture* zbuffer, nvrhi::ICommandList* commandLis
     params.zBufferInvSize = float2(1.f / zwidth, 1.f / zheight);
     commandList->writeBuffer(m_reduceParamsBuffer, &params, sizeof(params));
 
-    auto bindingSetDesc = GetDesc(true)
+    nvrhi::BindingLayoutDesc bindingLayoutDesc;
+    nvrhi::BindingSetDesc bindingSetDesc;
+    GetDesc(&bindingLayoutDesc, &bindingSetDesc, true);
+    bindingLayoutDesc
+        .addItem(nvrhi::BindingLayoutItem::Texture_SRV(0))
+        .addItem(nvrhi::BindingLayoutItem::StructuredBuffer_SRV(1))
+        .addItem(nvrhi::BindingLayoutItem::Sampler(0))
+        .setVisibility(nvrhi::ShaderType::Compute);
+    bindingSetDesc
         .addItem(nvrhi::BindingSetItem::Texture_SRV(0, zbuffer))
         .addItem(nvrhi::BindingSetItem::StructuredBuffer_SRV(1, m_reduceParamsBuffer))
         .addItem(nvrhi::BindingSetItem::Sampler(0, m_sampler));
 
-    nvrhi::BindingSetHandle bindingSet;
-    if (!nvrhi::utils::CreateBindingSetAndLayout(device, nvrhi::ShaderType::Compute, 0, bindingSetDesc, m_passBL, bindingSet))
+    if (!m_passBL)
     {
-        log::fatal("Failed to create binding set and layout for hiz reduce pass 1");
+        m_passBL = device->createBindingLayout(bindingLayoutDesc);
+        if (!m_passBL)
+        {
+            log::fatal("Failed to create binding layout for hiz reduce");
+        }
     }
 
+    nvrhi::BindingSetHandle bindingSet = device->createBindingSet(bindingSetDesc, m_passBL);
+    if (!bindingSet)
+    {
+        log::fatal("Failed to create binding set for hiz reduce");
+    }
+  
     if (!m_pass1PSO)
     {
         nvrhi::ComputePipelineDesc computePipelineDesc = nvrhi::ComputePipelineDesc()
             .setComputeShader(m_pass1Shader)
-            .addBindingLayout(m_passBL)
-            .addBindingLayout(m_debugBL);
+            .addBindingLayout(m_passBL);
 
         m_pass1PSO = device->createComputePipeline(computePipelineDesc);
 
@@ -261,8 +271,7 @@ void HiZBuffer::Reduce(nvrhi::ITexture* zbuffer, nvrhi::ICommandList* commandLis
 
     auto state = nvrhi::ComputeState()
         .setPipeline(m_pass1PSO)
-        .addBindingSet(bindingSet)
-        .addBindingSet(m_debugBS);
+        .addBindingSet(bindingSet);
 
     commandList->setComputeState(state);
 

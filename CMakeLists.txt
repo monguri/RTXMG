@@ -1,7 +1,6 @@
-
 cmake_minimum_required(VERSION 3.10)
 
-project(rtxmg LANGUAGES C CXX VERSION 0.9.2)
+project(rtxmg LANGUAGES C CXX VERSION 2.0.0)
 
 set(CMAKE_CONFIGURATION_TYPES "Debug;Release;RelWithDebInfo;ReleaseAsan" CACHE STRING "Configurations" FORCE)
 set(CMAKE_CXX_STANDARD 23)
@@ -46,14 +45,14 @@ endif()
 # DXC
 # WindowsSDK version is buggy and the compiler crashes
 ####################################
-include("${PROJECT_SOURCE_DIR}/CMake/FetchDXC.cmake")
+set(SHADERMAKE_FIND_DXC ON CACHE BOOL "" FORCE)
 
 ####################################
 # Streamline
 ####################################
 set(DONUT_WITH_STREAMLINE ON CACHE BOOL "" FORCE)
-set(DONUT_STREAMLINE_FETCH_URL "https://github.com/NVIDIAGameWorks/Streamline.git" CACHE STRING "")
-set(DONUT_STREAMLINE_FETCH_TAG "v2.7.2" CACHE STRING "")
+set(DONUT_STREAMLINE_FETCH_URL "https://github.com/NVIDIA-RTX/Streamline/releases/download/v2.8.0/streamline-sdk-v2.8.0.zip" CACHE STRING "")
+set(DONUT_STREAMLINE_FETCH_SHA256 "313669f8cf886f823ea0518a50712efa5e2e8623689ed2a6bd0d9353e475bc47" CACHE STRING "")
 set(STREAMLINE_FEATURE_DLSS_SR ON CACHE BOOL "" FORCE)
 set(STREAMLINE_FEATURE_DLSS_RR ON CACHE BOOL "" FORCE)
 set(STREAMLINE_INSTALL_DIR "bin" CACHE STRING "" FORCE)
@@ -67,7 +66,7 @@ include("${PROJECT_SOURCE_DIR}/CMake/FetchNVAPI.cmake")
 # DONUT
 ####################################
 option(DONUT_WITH_DX11 OFF)
-option(DONUT_WITH_VULKAN OFF "Enable the Vulkan version of Donut")
+set(DONUT_WITH_VULKAN ON CACHE BOOL "Enable the Vulkan version of Donut")
 set(NVRHI_WITH_NVAPI ON CACHE BOOL "" FORCE)
 set(DONUT_WITH_AFTERMATH ON CACHE BOOL "" FORCE)
 set(NVRHI_INSTALL OFF CACHE BOOL "" FORCE)
@@ -84,7 +83,12 @@ list(APPEND RTXMG_SHADERS_INCLUDE_DIR
 "${nvapi_SOURCE_DIR}"
 "${PROJECT_SOURCE_DIR}/extern/donut/nvrhi/include")
 
-set(RTXMG_SHADERMAKE_OPTIONS_DXIL "--embedPDB --hlsl2021")
+set(RTXMG_SHADERMAKE_OPTIONS "--embedPDB --hlsl2021")
+
+#-vd disable validator due to a bug in 
+# https://github.com/microsoft/DirectXShaderCompiler/issues/7181
+# should be fixed in version 1.8.2505
+set(RTXMG_SHADERMAKE_OPTIONS_SPIRV "--vulkanMemoryLayout scalar --compilerOptions -Vd") 
 set(RTXMG_SHADERS_SHADERMODEL "6_6")
 
 set(RTXMG_SHADERS_IGNORED_INCLUDES "")
@@ -97,11 +101,53 @@ list(APPEND RTXMG_SHADERS_IGNORED_INCLUDES
     "cstdio"
     "stdio.h"
     "cmath"
+    "ostream"
     "rtxmg/utils/buffer.h"
 )
 
 add_subdirectory(extern/donut)
 add_subdirectory(extern/osd_lite EXCLUDE_FROM_ALL)
+
+####################################
+# meshoptimizer (for cluster_lod baker)
+####################################
+include(FetchContent)
+set(MESHOPT_BUILD_DEMO OFF CACHE BOOL "" FORCE)
+set(MESHOPT_BUILD_GLTFPACK OFF CACHE BOOL "" FORCE)
+set(MESHOPT_INSTALL OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    meshoptimizer
+    GIT_REPOSITORY https://github.com/zeux/meshoptimizer.git
+    GIT_TAG        v1.1
+)
+FetchContent_MakeAvailable(meshoptimizer)
+set_target_properties(meshoptimizer PROPERTIES FOLDER "extern")
+
+####################################
+# mimalloc — scalable allocator used ONLY by meshoptimizer (via
+# meshopt_setAllocator) to avoid global-heap-lock contention during the
+# parallel cluster-LOD bake. Not a global new/delete override.
+####################################
+set(MI_BUILD_SHARED   OFF CACHE BOOL "" FORCE)
+set(MI_BUILD_OBJECT   OFF CACHE BOOL "" FORCE)
+set(MI_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
+set(MI_OVERRIDE       OFF CACHE BOOL "" FORCE)  # do NOT replace global malloc/new
+FetchContent_Declare(
+    mimalloc
+    GIT_REPOSITORY https://github.com/microsoft/mimalloc.git
+    GIT_TAG        v2.1.7
+)
+FetchContent_MakeAvailable(mimalloc)
+set_target_properties(mimalloc-static PROPERTIES FOLDER "extern")
+
+# The C++ and the HLSL halves of the ring have to agree, and the shader compile
+# takes its defines from the ShaderMake option string, not from CMake targets.
+option(RTXMG_SHADER_DEBUG "Compile in the shader-debug print ring (shader_debug.h)" ON)
+if(NOT RTXMG_SHADER_DEBUG)
+    add_compile_definitions(ENABLE_SHADER_DEBUG=0)
+    string(APPEND RTXMG_SHADERMAKE_OPTIONS " -D ENABLE_SHADER_DEBUG=0")
+endif()
+
 add_subdirectory(rtxmg)
 add_subdirectory(demo)
 

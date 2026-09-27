@@ -1,29 +1,14 @@
-//
-// Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions
-// are met:
-//  * Redistributions of source code must retain the above copyright
-//    notice, this list of conditions and the following disclaimer.
-//  * Redistributions in binary form must reproduce the above copyright
-//    notice, this list of conditions and the following disclaimer in the
-//    documentation and/or other materials provided with the distribution.
-//  * Neither the name of NVIDIA CORPORATION nor the names of its
-//    contributors may be used to endorse or promote products derived
-//    from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-// PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
-// CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-// EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-// PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
-// OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+ *
+ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+ * property and proprietary rights in and to this material, related
+ * documentation and any modifications thereto. Any use, reproduction,
+ * disclosure or distribution of this material and related documentation
+ * without an express license agreement from NVIDIA CORPORATION or
+ * its affiliates is strictly prohibited.
+ */
 //
 
 // clang-format off
@@ -82,31 +67,29 @@ void ProfilerGUI::BuildControllerUI( ImFont* iconicFont, ImPlotContext *plotCont
 
     ImVec2 itemSize = ImGui::GetItemRectSize();
     char buf[50];
-    if (HumanFormatter(static_cast<double>(desiredTris), buf, sizeof(buf)))
+    if (clusterLodTrisValid)
+    {
+        // Cluster-LOD: unique is the CLAS-deduped footprint, total the instanced sum.
+        char bufU[32];
+        char bufT[32];
+        HumanFormatter(static_cast<double>(clusterLodUniqueTris), bufU, sizeof(bufU));
+        HumanFormatter(static_cast<double>(clusterLodTotalTris),  bufT, sizeof(bufT));
+        ImGui::Text("Uniq Tris %s", bufU);
+        ImGui::Text("Total Tris %s", bufT);
+    }
+    else if (HumanFormatter(static_cast<double>(desiredTris), buf, sizeof(buf)))
         ImGui::Text("Tris %s", buf);
     else
         ImGui::Text("Too many !");
 
-    ImGui::PushFont(iconicFont);
-
-    bool buttonState = displayGraphWindow;
-    if (buttonState)
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1.f, 0.f, 0.f, 1.f));
-    if (ImGui::Button((char const*)(u8"\ue0ae" "## controller button"), { 0.f, itemSize.y }))
-    {
-        displayGraphWindow = !buttonState;
-    }
-    if (buttonState)
-        ImGui::PopStyleColor();
-
-    ImGui::PopFont();
-
-    ImGui::SameLine(32.f);
-
+    // The Profiler-window toggle lives in the top-left sidebar; this controller
+    // window is just the always-on Tris / FPS HUD.
     if (fps >= 0)
         ImGui::Text("FPS   % 5d", fps);
     else
         ImGui::Text("FPS    ----");
+
+    (void)iconicFont;
 
     controllerWindow.size = ImGui::GetWindowSize();
 

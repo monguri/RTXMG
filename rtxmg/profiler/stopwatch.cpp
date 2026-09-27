@@ -1,29 +1,14 @@
-//
-// Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions
-// are met:
-//  * Redistributions of source code must retain the above copyright
-//    notice, this list of conditions and the following disclaimer.
-//  * Redistributions in binary form must reproduce the above copyright
-//    notice, this list of conditions and the following disclaimer in the
-//    documentation and/or other materials provided with the distribution.
-//  * Neither the name of NVIDIA CORPORATION nor the names of its
-//    contributors may be used to endorse or promote products derived
-//    from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-// PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
-// CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-// EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-// PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
-// OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+ *
+ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+ * property and proprietary rights in and to this material, related
+ * documentation and any modifications thereto. Any use, reproduction,
+ * disclosure or distribution of this material and related documentation
+ * without an express license agreement from NVIDIA CORPORATION or
+ * its affiliates is strictly prohibited.
+ */
 //
 
 // clang-format off
@@ -85,15 +70,18 @@ void StopwatchGPU::ProcessUnresolvedQueries()
 
     // New frame started
     // Check our previous queries
-    for (; m_unresolvedQueryIndex != m_queryIndex;
-        m_unresolvedQueryIndex = (m_unresolvedQueryIndex + 1) % kMaxInFlightQueries)
+    uint32_t unresolvedQueryIndex = m_unresolvedQueryIndex;
+    while(unresolvedQueryIndex != m_queryIndex)
     {
-        if (m_device->pollTimerQuery(m_timerQueries[m_unresolvedQueryIndex]))
+        unresolvedQueryIndex = (unresolvedQueryIndex + 1) % kMaxInFlightQueries;
+        if (!m_device->pollTimerQuery(m_timerQueries[unresolvedQueryIndex]))
         {
-            // save the last one
-            m_lastDuration = m_device->getTimerQueryTime(m_timerQueries[m_unresolvedQueryIndex]);
-            m_hasLastDuration = true;
+            break;
         }
+        // save the last one
+        m_unresolvedQueryIndex = unresolvedQueryIndex;
+        m_lastDuration = m_device->getTimerQueryTime(m_timerQueries[m_unresolvedQueryIndex]);
+        m_hasLastDuration = true;
         m_device->resetTimerQuery(m_timerQueries[m_unresolvedQueryIndex]);
     }
 }
@@ -107,8 +95,8 @@ void StopwatchGPU::Start(nvrhi::ICommandList* commandList)
         {
             query = m_device->createTimerQuery();
         }
-        m_queryIndex = 0;
-        m_unresolvedQueryIndex = 0;
+        m_queryIndex = -1;
+        m_unresolvedQueryIndex = -1;
         m_hasLastDuration = false;
         state = State::reset;
     }
@@ -116,11 +104,17 @@ void StopwatchGPU::Start(nvrhi::ICommandList* commandList)
     ProcessUnresolvedQueries();
     
     // Start a new query. Assumption is one star/stop pair per frame
-    // It's possible we overflow max in flight queries, but we just overwrite
     m_queryIndex = (m_queryIndex + 1) % kMaxInFlightQueries;
 
-    // all but 'stopped' states are valid, so can advance up to 3 times
+    // all but 'stopped' states are valid, so can advance up to
+    // kMaxInFlightQueries times
     assert(state != State::ticking);
+
+    // When the ring wraps onto a slot whose result was never polled, the slot is
+    // still marked started; nvrhi's Vulkan beginTimerQuery asserts on that (D3D12
+    // tolerates it), so clear the stale state rather than crash on the overflow.
+    m_device->resetTimerQuery(m_timerQueries[m_queryIndex]);
+
     commandList->beginTimerQuery(m_timerQueries[m_queryIndex]);
     m_commandList = commandList;
     m_device = commandList->getDevice();

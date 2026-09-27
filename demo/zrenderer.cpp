@@ -1,29 +1,14 @@
-//
-// Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions
-// are met:
-//  * Redistributions of source code must retain the above copyright
-//    notice, this list of conditions and the following disclaimer.
-//  * Redistributions in binary form must reproduce the above copyright
-//    notice, this list of conditions and the following disclaimer in the
-//    documentation and/or other materials provided with the distribution.
-//  * Neither the name of NVIDIA CORPORATION nor the names of its
-//    contributors may be used to endorse or promote products derived
-//    from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-// PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
-// CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-// EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-// PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
-// OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+ *
+ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+ * property and proprietary rights in and to this material, related
+ * documentation and any modifications thereto. Any use, reproduction,
+ * disclosure or distribution of this material and related documentation
+ * without an express license agreement from NVIDIA CORPORATION or
+ * its affiliates is strictly prohibited.
+ */
 //
 
 
@@ -47,9 +32,8 @@ using namespace donut::math;
 #include "rtxmg/profiler/statistics.h"
 #include "rtxmg/scene/camera.h"
 
-ZRenderer::ZRenderer(std::shared_ptr<engine::ShaderFactory> shaderFactory,
-    std::shared_ptr<engine::DescriptorTableManager> descriptorTable)
-    : m_shaderFactory(shaderFactory), m_descriptorTable(descriptorTable)
+ZRenderer::ZRenderer(std::shared_ptr<engine::ShaderFactory> shaderFactory)
+    : m_shaderFactory(shaderFactory)
 {
 
 }
@@ -115,6 +99,12 @@ void ZRenderer::BuildPipeline(nvrhi::IDevice* device)
     }
 
     m_shaderTable->setRayGenerationShader("RayGen");
+    // The shared TLAS produces hit-group indices 0..3 (subd hit/shadow = 0/1,
+    // cluster-LOD hit/shadow = 2/3); every index must have a record.  Depth-only
+    // shading is geometry-agnostic, so all four map to the same ZHitGroup.
+    m_shaderTable->addHitGroup("ZHitGroup");
+    m_shaderTable->addHitGroup("ZHitGroup");
+    m_shaderTable->addHitGroup("ZHitGroup");
     m_shaderTable->addHitGroup("ZHitGroup");
     m_shaderTable->addMissShader("Miss");
 }

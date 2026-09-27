@@ -1,71 +1,60 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+ * property and proprietary rights in and to this material, related
+ * documentation and any modifications thereto. Any use, reproduction,
+ * disclosure or distribution of this material and related documentation
+ * without an express license agreement from NVIDIA CORPORATION or
+ * its affiliates is strictly prohibited.
  */
 
- //#include "args.h"
-
 #include <donut/core/log.h>
-#include <donut/engine/Scene.h>
 #include <donut/engine/TextureCache.h>
 #include <json/json.h>
 #include <nvrhi/common/misc.h>
-#include <execution>
+#include <algorithm>
+#include <cassert>
+#include <chrono>
 #include <filesystem>
-#include <numeric>
 #include <numbers>
-#include <ranges>
-#include <set>
 
-#include "rtxmg/cluster_builder/cluster_accels.h"
-#include "rtxmg/profiler/statistics.h"
+#include "rtxmg/cluster_lod/cluster_lod_gltf_importer.h"
+#include "rtxmg/cluster_lod/baking/bake_progress.h"
 #include "rtxmg/scene/box_extent.h"
+#include "rtxmg/scene/instance_data.h"
+#include "rtxmg/scene/instance_grid.h"
+#include "rtxmg/scene/material.h"
 #include "rtxmg/scene/scene.h"
 #include "rtxmg/scene/json.h"
 #include "rtxmg/subdivision/shape.h"
 #include "rtxmg/subdivision/subdivision_surface.h"
 #include "rtxmg/subdivision/topology_cache.h"
-#include "rtxmg/utils/buffer.h"
 
 using namespace donut;
 
 namespace fs = std::filesystem;
 
-RTXMGScene::RTXMGScene(nvrhi::IDevice* device,
-    const fs::path& mediapath,
-    std::shared_ptr<CommonRenderPasses> commonPasses,
-    ShaderFactory& shaderFactory,
-    std::shared_ptr<vfs::IFileSystem> fs,
-    std::shared_ptr<TextureCache> textureCache,
-    std::shared_ptr<DescriptorTableManager> descriptorTable,
-    std::shared_ptr<SceneTypeFactory> sceneTypeFactory,
-    int2 initialFrameRange, int isoLevelSharp, int isoLevelSmooth)
-    : Scene(device, shaderFactory, fs, textureCache,
-        descriptorTable, sceneTypeFactory),
-    m_commonPasses(commonPasses),
-    m_mediaPath(mediapath),
-    m_isoLevelSharp(isoLevelSharp),
-    m_isoLevelSmooth(isoLevelSmooth)
+RTXMGScene::RTXMGScene(const RTXMGSceneParams& p)
+    : m_device(p.device),
+    m_fs(p.fs),
+    m_textureCache(p.textureCache),
+    m_descriptorTable(p.descriptorTable),
+    m_textureLoader(p.textureCache, *p.mediaPath),
+    m_materialLibrary(p.device),
+    m_mediaPath(*p.mediaPath),
+    m_isoLevelSharp(p.isoLevelSharp),
+    m_isoLevelSmooth(p.isoLevelSmooth),
+    m_commonPasses(p.commonPasses),
+    m_logClusterLod(p.logClusterLod),
+    m_clusterBakerConfig(p.clusterBakerConfig),
+    m_clusterCacheDir(p.clusterCacheDir)
 {
-    m_attributes.frameRange = initialFrameRange;
+    m_attributes.frameRange = p.initialFrameRange;
 }
+
+RTXMGScene::~RTXMGScene() = default;
 
 void RTXMGScene::InsertModel(Model&& model)
 {
@@ -81,19 +70,44 @@ void RTXMGScene::InsertModel(Model&& model)
 
         m_subdMeshes.emplace_back(std::move(model.subd));
 
-        std::ranges::move(model.instances, std::back_inserter(m_instances));
+        std::ranges::move(model.instances, std::back_inserter(m_subdInstances));
     }
 }
 
-std::span<Instance const> RTXMGScene::GetSubdMeshInstances() const
+void RTXMGScene::InsertClusterLodModel(ClusterLodModel&& model)
 {
-    return const_cast<RTXMGScene*>(this)->GetSubdMeshInstances();
-}
-std::span<Instance> RTXMGScene::GetSubdMeshInstances()
-{
-    if (!m_subdMeshes.empty())
-        return std::span<Instance>(m_instances).subspan(0);
-    return {};
+    // Assign geometry IDs relative to current count before appending.
+    const uint32_t baseGeoID = (uint32_t)m_clusterLodGeometries.size();
+    for (auto& inst : model.instances)
+        inst.geometryID += baseGeoID;
+
+    // Material IDs in instances and in GeometryStorage::localMaterialIDs[] are
+    // GLTF-file-local; offset them so they index the combined
+    // m_clusterLodMaterialDescs.
+    const uint32_t baseMtlID = (uint32_t)m_clusterLodMaterialDescs.size();
+    for (auto& inst : model.instances)
+        inst.materialID += baseMtlID;
+    for (auto& storage : model.storages)
+        for (auto& localID : storage.localMaterialIDs)
+            if (localID != ~0u)
+                localID += baseMtlID;
+
+    std::ranges::move(model.geometries, std::back_inserter(m_clusterLodGeometries));
+    std::ranges::move(model.storages,   std::back_inserter(m_clusterLodStorages));
+    std::ranges::move(model.instances,  std::back_inserter(m_clusterLodInstances));
+    std::ranges::move(model.materials,  std::back_inserter(m_clusterLodMaterialDescs));
+
+    // First mmap wins; a later model keeping its own view is harmless because its
+    // spans already point into the correct storage vectors.
+    if (!m_cacheFileView.IsValid() && model.cacheView.IsValid())
+        m_cacheFileView = std::move(model.cacheView);
+
+    // The shard mappings must outlive the scene: m_clusterLodGeometries holds
+    // zero-copy GeometryViews pointing into them.
+    if (!model.shardCache.IsEmpty())
+        m_shardCaches.push_back(std::move(model.shardCache));
+
+    m_hasClusterLod = true;
 }
 
 uint32_t RTXMGScene::TotalSubdPatchCount() const
@@ -112,11 +126,6 @@ void RTXMGScene::Animate(float animTime, float animRate)
     for (auto& subd : m_subdMeshes)
     {
         subd->Animate(animTime, animRate);
-    }
-
-    for (auto& instance : m_instances)
-    {
-        instance.Animate(animTime, animRate);
     }
 }
 
@@ -184,18 +193,89 @@ static RTXMGScene::Attributes& operator << (RTXMGScene::Attributes& attrs, const
     return attrs;
 }
 
-fs::path RTXMGScene::ResolveMediapath(const fs::path& m_filepath, const fs::path& mediapath)
+std::optional<RTXMGScene::PrebakedClusterModel>
+RTXMGScene::TakePrebakedClusterModel(const std::filesystem::path& gltfPath)
 {
-    if (m_filepath.empty())
-        return {};
+    const fs::path key = gltfPath.lexically_normal();
+    for (auto it = m_prebakedClusterModels.begin(); it != m_prebakedClusterModels.end(); ++it)
+    {
+        if (it->path == key)
+        {
+            std::optional<PrebakedClusterModel> entry = std::move(*it);
+            m_prebakedClusterModels.erase(it);
+            return entry;
+        }
+    }
+    return std::nullopt;
+}
 
-    if (fs::is_regular_file(m_filepath))
-        return m_filepath;
+void RTXMGScene::InsertClusterLodModelWithMetadata(
+    ClusterLodModel&&                          model,
+    std::vector<ClusterLodPrebuiltGeometryMetadata>&& metadata)
+{
+    const size_t baseGeoID = m_clusterLodGeometries.size();
+    InsertClusterLodModel(std::move(model));
 
-    if (!mediapath.empty() && fs::is_regular_file(mediapath / m_filepath))
-        return mediapath / m_filepath;
+    // Index-aligned with the geometry array: slots without pre-built metadata stay
+    // invalid, and the splash pump / init fallback builds them.
+    m_clusterLodPrebuiltMetadata.resize(m_clusterLodGeometries.size());
+    for (size_t i = 0; i < metadata.size() && baseGeoID + i < m_clusterLodPrebuiltMetadata.size(); ++i)
+        m_clusterLodPrebuiltMetadata[baseGeoID + i] = std::move(metadata[i]);
+}
 
-    return {};
+bool RTXMGScene::PumpClusterLodPrebuiltMetadataUploads(nvrhi::ICommandList* commandList, double budgetMs)
+{
+    const size_t numGeom = m_clusterLodGeometries.size();
+    if (m_clusterLodPrebuiltCursor >= numGeom)
+        return true;
+
+    if (m_clusterLodPrebuiltMetadata.size() < numGeom)
+        m_clusterLodPrebuiltMetadata.resize(numGeom);
+
+    // Entries pre-built on the scene-load thread are skipped for free; only
+    // publish loading-bar progress when there is real work left.
+    if (m_clusterLodPrebuiltCursor == 0 &&
+        std::any_of(m_clusterLodPrebuiltMetadata.begin(), m_clusterLodPrebuiltMetadata.end(),
+                    [](const ClusterLodPrebuiltGeometryMetadata& m) { return !m.IsValid(); }))
+    {
+        rtxmg::GetBakeProgress().Begin(uint32_t(numGeom), 0, 0,
+                                    "Uploading cluster LOD geometry");
+    }
+
+    const bool publishProgress = rtxmg::GetBakeProgress().IsActive();
+    size_t     builtThisCall   = 0;
+    const auto t0 = std::chrono::steady_clock::now();
+    while (m_clusterLodPrebuiltCursor < numGeom)
+    {
+        ClusterLodPrebuiltGeometryMetadata& entry = m_clusterLodPrebuiltMetadata[m_clusterLodPrebuiltCursor];
+        if (!entry.IsValid())
+        {
+            entry = ClusterLodPrebuiltGeometryMetadata::Build(
+                m_clusterLodGeometries[m_clusterLodPrebuiltCursor], m_descriptorTable.get(),
+                m_device, commandList);
+            ++builtThisCall;
+        }
+        ++m_clusterLodPrebuiltCursor;
+        if (publishProgress)
+            rtxmg::GetBakeProgress().CompleteOne(0);
+
+        if (budgetMs > 0.0 && builtThisCall > 0 &&
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - t0).count() >= budgetMs)
+            break;
+    }
+
+    if (m_clusterLodPrebuiltCursor >= numGeom)
+    {
+        if (publishProgress)
+        {
+            rtxmg::GetBakeProgress().End();
+            log::info("RTXMGScene: pre-uploaded cluster-LOD geometry metadata for %zu geometries "
+                      "(splash pump)", numGeom);
+        }
+        return true;
+    }
+    return false;
 }
 
 void RTXMGScene::LoadSceneFile(const std::filesystem::path& m_filepath, std::unique_ptr<ObjImporter>& objImporter, nvrhi::ICommandList* commandList)
@@ -250,17 +330,41 @@ void RTXMGScene::LoadSceneFile(const std::filesystem::path& m_filepath, std::uni
                 if (!modelName.isString())
                     throw std::runtime_error("invalid model path in 'models' section");
 
-                float frameOffset = 0.0f;
-                if (const auto& offset = node["frameoffset"]; offset.isDouble())
+                const fs::path modelPath = modelName.asString();
+                const auto modelExt = modelPath.extension();
+
+                if (modelExt == ".gltf" || modelExt == ".glb")
                 {
-                    frameOffset = offset.asFloat();
+                    const fs::path resolvedPath =
+                        rtxmg::ResolveMediapath(fp.parent_path() / modelPath, m_mediaPath);
+                    const fs::path loadPath =
+                        resolvedPath.empty() ? fp.parent_path() / modelPath : resolvedPath;
+
+                    // Reuse the model the load thread imported off-thread for this
+                    // gltf, if there is one; otherwise import inline.
+                    std::optional<PrebakedClusterModel> prebaked = TakePrebakedClusterModel(loadPath);
+                    if (!prebaked.has_value())
+                    {
+                        ClusterLodGltfImporter gltfImporter(m_clusterBakerConfig, m_logClusterLod, m_clusterCacheDir);
+                        if (auto clusterModel = gltfImporter.Load(loadPath); clusterModel.has_value())
+                            prebaked = PrebakedClusterModel{ loadPath, std::move(*clusterModel), {} };
+                    }
+
+                    if (prebaked.has_value())
+                        InsertClusterLodModelWithMetadata(std::move(prebaked->model),
+                                                          std::move(prebaked->metadata));
+                    else
+                        log::warning("RTXMGScene::LoadSceneFile: Failed to load GLTF '%s'",
+                                     modelPath.string().c_str());
                 }
+                else
+                {
+                    auto model =
+                        objImporter->Load(modelName.asString(), *m_textureCache, { 0, 0 }, instance, commandList);
 
-                auto model =
-                    objImporter->Load(modelName.asString(), *m_TextureCache, { 0, 0 }, instance, commandList);
-
-                if (model.has_value())
-                    InsertModel(std::move(*model));
+                    if (model.has_value())
+                        InsertModel(std::move(*model));
+                }
             }
 
             if (const auto& type = node["type"]; type.isString())
@@ -291,15 +395,10 @@ void RTXMGScene::LoadSceneFile(const std::filesystem::path& m_filepath, std::uni
     }
 }
 
-bool RTXMGScene::LoadWithExecutor(const std::filesystem::path& filename,
-    tf::Executor* executor)
+bool RTXMGScene::LoadWithThreadPool(const std::filesystem::path& filename,
+    ThreadPool* threadPool, std::vector<nvrhi::CommandListHandle>* outRecordedCommandLists)
 {
-    if (executor != nullptr)
-    {
-        log::warning("RTXMGScene::LoadWithExecutor: executor based loading is not "
-            "supported, ignoring");
-    }
-    log::info("RTXMGScene::LoadWithExecutor: %s", filename.string().c_str());
+    log::info("RTXMGScene::LoadWithThreadPool: %s", filename.string().c_str());
 
     TopologyCache topologyCache(TopologyCache::Options{
         .isoLevelSharp = (uint8_t)m_isoLevelSharp,
@@ -309,223 +408,330 @@ bool RTXMGScene::LoadWithExecutor(const std::filesystem::path& filename,
     fs::path sanitizedFilePath = filename;
     std::string sceneName = sanitizedFilePath.empty() ? "default_scene" : sanitizedFilePath.filename().generic_string();
 
-    auto commandList = m_Device->createCommandList();
+    // Deferred (non-immediate): this runs on the load thread, where an immediate
+    // list would collide with the main thread's — only one may be open at a time.
+    auto commandList = m_device->createCommandList(
+        nvrhi::CommandListParameters().setEnableImmediateExecution(false));
     commandList->open();
     {
+        // Reset the per-geometry GPU-metadata table before models insert into it.
+        m_clusterLodPrebuiltMetadata.clear();
+        m_clusterLodPrebuiltCursor = 0;
+
         std::unique_ptr<ObjImporter> objImporter =
-            std::make_unique<ObjImporter>(m_fs, m_mediaPath, m_SceneTypeFactory, m_DescriptorTable, topologyCache);
+            std::make_unique<ObjImporter>(m_fs, m_mediaPath, m_descriptorTable, topologyCache);
 
-        if (sanitizedFilePath.empty() || sanitizedFilePath.extension() == ".obj")
+        if (!ImportModels(sanitizedFilePath, objImporter, commandList))
         {
-            // obj importer will default to a cube without a filename
-            log::info("RTXMGScene::LoadWithExecutor: Loading an OBJ file");
-
-            auto model =
-                objImporter->Load(sanitizedFilePath, *m_TextureCache, m_attributes.frameRange,
-                    Instance{}, commandList);
-
-            if (model.has_value())
-            {
-                InsertModel(std::move(*model));
-            }
-            else
-            {
-                log::fatal("RTXMGScene::LoadWithExecutor: Failed to load the OBJ file");
-            }
-        }
-        else if (sanitizedFilePath.extension() == ".json")
-        {
-            log::info("RTXMGScene::LoadWithExecutor: Loading a JSON file");
-            LoadSceneFile(sanitizedFilePath, objImporter, commandList);
-        }
-        else
-        {
-            log::fatal("RTXMGScene::LoadWithExecutor: Unsupported file format");
+            commandList->close();
             return false;
         }
 
-        m_attributes.averageInstanceScale = 0.0f;
-        for (const auto& instance : m_instances)
-        {
-            m_attributes.averageInstanceScale +=
-                maxComponent(instance.aabb.m_maxs - instance.aabb.m_mins);
-            m_attributes.aabb |= instance.aabb;
-        }
+        ReduceSceneStatistics();
 
-        m_attributes.averageInstanceScale /= float(m_instances.size());
-        if ((m_attributes.frameRange.y - m_attributes.frameRange.x) > 1 &&
-            m_attributes.frameRate == 0.f)
-        {
-            m_attributes.frameRate = 24.0f;
-        }
-
-        m_topologyMaps = topologyCache.InitDeviceData(m_DescriptorTable, commandList);
+        m_topologyMaps = topologyCache.InitDeviceData(m_descriptorTable, commandList);
 
         m_inputPath = sanitizedFilePath.lexically_normal().generic_string();
     }
     commandList->close();
-    m_Device->executeCommandList(commandList);
+    // Queue submission is the caller's, on the main thread: it races the
+    // Streamline-wrapped present.
+    if (outRecordedCommandLists)
+        outRecordedCommandLists->push_back(commandList);
+    else
+        m_device->executeCommandList(commandList);
 
-    /// Convert control cage to donut scenegraph for easy viz
-    std::shared_ptr<SceneGraphNode> root = std::make_shared<SceneGraphNode>();
-    root->SetName(sceneName);
-    m_Models.emplace_back(SceneImportResult{ root });
+    // Build RTXMGSceneGraph
+    auto root = std::make_shared<RTXMGSceneNode>();
+    root->name = sceneName;
+    m_sceneGraph.SetRootNode(root);
 
-    m_SceneGraph = std::make_shared<SceneGraph>();
-    m_SceneGraph->SetRootNode(m_Models.front().rootNode);
+    m_materialLibrary.BuildSubdMaterials(m_subdMeshes, m_textureLoader, threadPool);
+    BuildSubdSceneNodes(root);
 
-    
-    std::vector<std::shared_ptr<MeshInfo>> sceneMeshInfos;
-    for (auto& subdMesh : m_subdMeshes)
-    {
-        auto shape = subdMesh->GetShape();
-    
-        // Add scene mesh info with dummy vertices
-        // This is to set up GeometryData and Material data in a donut compatible way
-        auto meshInfo = m_SceneTypeFactory->CreateMesh();
-        sceneMeshInfos.push_back(meshInfo);
-        meshInfo->name = shape->filepath.empty() ? "default_shape" : shape->filepath.generic_string();
-        meshInfo->buffers = std::make_shared<BufferGroup>(); // empty dummy buffer group
-        meshInfo->buffers->positionData.resize(4, float3::zero()); // add dummy vertex buffer. Must be 16 byte aligned
-        meshInfo->objectSpaceBounds = shape->aabb;
-        meshInfo->totalIndices = 0;
-        meshInfo->totalVertices = 0;
-
-        auto addTexture = [&sanitizedFilePath, this](const fs::path& shapePath, const std::string& mtlLib, const std::string& texPath, bool* enable) -> std::shared_ptr<LoadedTexture>
-            {
-                *enable = false;
-                if (texPath.empty())
-                {
-                    return nullptr;
-                }
-                fs::path fp = (((shapePath.parent_path() / mtlLib)).parent_path() / texPath).lexically_normal();
-                if (!is_regular_file(fp))
-                {
-                    fp = ResolveMediapath(fp, m_mediaPath);
-                }
-                if (is_regular_file(fp))
-                {
-                    *enable = true;
-                    return m_TextureCache->LoadTextureFromFileDeferred(fp, false);
-                }
-                else
-                {
-                    log::warning("Texture %s not found...", fp.generic_string().c_str());
-
-                }
-                return nullptr;
-            };
-
-        std::vector<std::shared_ptr<Material>> materials(shape->mtls.size());
-
-        meshInfo->geometries.reserve(shape->subshapes.size());
-        size_t numFaces = shape->nvertsPerFace.size();
-        size_t vertIndex = 0;
-        for (uint32_t subshapeIndex = 0; subshapeIndex < shape->subshapes.size(); subshapeIndex++)
-        {
-            const auto& subshape = shape->subshapes[subshapeIndex];
-
-            // lazy initialize of materials
-            if (!materials[subshape.mtlBind].get())
-            {
-                const auto& mtl = shape->mtls[subshape.mtlBind];
-                auto material = m_SceneTypeFactory->CreateMaterial();
-                material->baseOrDiffuseColor = mtl->kd;
-                material->specularColor = mtl->ks;
-                // material->specularExponent = mtl->ns;
-                material->emissiveColor = mtl->ke;
-                material->roughness = mtl->Pr;
-                material->baseOrDiffuseTexture = addTexture(shape->filepath, shape->mtllib, mtl->map_kd, &material->enableBaseOrDiffuseTexture);
-                material->metalRoughOrSpecularTexture = addTexture(shape->filepath, shape->mtllib, mtl->map_pr, &material->enableMetalRoughOrSpecularTexture);
-
-                // hijack emissive texture for metalness for now (so we can use the existing Donut material structs)
-                material->emissiveTexture = addTexture(shape->filepath, shape->mtllib, mtl->map_pm, &material->enableEmissiveTexture);
-
-                // hijack occlusion texture for specular for now (so we can use the existing Donut material structs)
-                material->occlusionTexture = addTexture(shape->filepath, shape->mtllib, mtl->map_ks, &material->enableOcclusionTexture);
-
-                material->normalTexture = addTexture(shape->filepath, shape->mtllib, mtl->map_bump, &material->enableNormalTexture);
-                material->normalTextureScale = mtl->bm;
-                material->metalness = mtl->Pm;
-
-                materials[subshape.mtlBind] = material;
-            }
-
-            std::shared_ptr<MeshGeometry> geometry = std::make_shared<MeshGeometry>();
-            geometry->material = materials[subshape.mtlBind];
-            geometry->numIndices = 0;
-            geometry->numVertices = 0;
-            geometry->objectSpaceBounds = box3::empty();
-            geometry->indexOffsetInMesh = 0;
-            geometry->vertexOffsetInMesh = 0;
-            meshInfo->geometries.push_back(geometry);
-
-            size_t endFaceIndex = (subshapeIndex + 1) < shape->subshapes.size() ?
-                shape->subshapes[subshapeIndex + 1].startFaceIndex :
-                numFaces;
-
-            for (size_t faceIndex = subshape.startFaceIndex; faceIndex < endFaceIndex; faceIndex++)
-            {
-                for (size_t v_offset = 0; v_offset < shape->nvertsPerFace[faceIndex];
-                    ++v_offset)
-                {
-                    geometry->objectSpaceBounds |=
-                        shape->verts[shape->faceverts[vertIndex + v_offset]];
-                }
-                vertIndex += shape->nvertsPerFace[faceIndex];
-            }
-
-            meshInfo->objectSpaceBounds |= geometry->objectSpaceBounds;
-
-            if (geometry->material->normalTexture.get() && geometry->material->enableNormalTexture)
-            {
-                subdMesh->m_hasDisplacementMaterial = true;
-            }
-        }
-    }
-
-    auto subdMeshInstances = GetSubdMeshInstances();
-    uint32_t instanceIndex = 0;
-    for (auto& instance : subdMeshInstances)
-    {
-        auto meshInfo = sceneMeshInfos[instance.meshID];
-        auto meshInstance = m_SceneTypeFactory->CreateMeshInstance(meshInfo);
-
-        // connect our mesh instances to donut's
-        instance.meshInstance = meshInstance;
-
-        auto node = std::make_shared<SceneGraphNode>();
-
-        node->SetScaling(double3(instance.scaling));
-        node->SetRotation(dquat(instance.rotation));
-        node->SetTranslation(double3(instance.translation));
-
-        m_SceneGraph->Attach(root, node);
-
-        node->SetLeaf(meshInstance);
-
-        std::string meshInstanceName = meshInfo->name + "_" + std::to_string(instanceIndex);
-        node->SetName(meshInstanceName);
-
-        instanceIndex++;
-    }
-
-    PrintSceneGraph(root);
-
-    SceneGraphWalker walker(m_SceneGraph->GetRootNode().get());
-    int boxCount = 0;
-    while (walker)
-    {
-        auto leaf = walker->GetLeaf();
-        if (leaf)
-        {
-            auto box = leaf->GetLocalBoundingBox();
-            m_attributes.averageInstanceScale += MaxBoxExtent(box);
-            boxCount++;
-        }
-        walker.Next(true);
-    }
-    m_attributes.averageInstanceScale /= boxCount;
+    // Cluster-LoD materials append after the subd ones, so this must stay second.
+    m_materialLibrary.BuildClusterLodMaterials(m_clusterLodMaterialDescs, m_textureLoader, threadPool);
+    BuildClusterLodSceneNodes(root);
 
     return true;
+}
+
+// File-format dispatch: .obj (or no filename) goes through ObjImporter, .gltf/.glb
+// through the cluster-LoD importer, and .json through LoadSceneFile, which picks
+// either per graph node.
+bool RTXMGScene::ImportModels(const std::filesystem::path& filepath,
+                              std::unique_ptr<ObjImporter>& objImporter,
+                              nvrhi::ICommandList* commandList)
+{
+    const auto ext = filepath.extension();
+
+    if (filepath.empty() || ext == ".obj")
+    {
+        // obj importer will default to a cube without a filename
+        log::info("RTXMGScene::LoadWithThreadPool: Loading an OBJ file");
+
+        auto model =
+            objImporter->Load(filepath, *m_textureCache, m_attributes.frameRange,
+                Instance{}, commandList);
+
+        if (model.has_value())
+        {
+            InsertModel(std::move(*model));
+        }
+        else
+        {
+            log::fatal("RTXMGScene::LoadWithThreadPool: Failed to load the OBJ file");
+        }
+    }
+    else if (ext == ".gltf" || ext == ".glb")
+    {
+        log::info("RTXMGScene::LoadWithThreadPool: Loading a GLTF file");
+
+        // Reuse the model the load thread imported off-thread, if there is
+        // one; otherwise bake inline here.
+        std::optional<PrebakedClusterModel> prebaked = TakePrebakedClusterModel(filepath);
+        if (!prebaked.has_value())
+        {
+            ClusterLodGltfImporter gltfImporter(m_clusterBakerConfig, m_logClusterLod, m_clusterCacheDir);
+            if (auto clusterModel = gltfImporter.Load(filepath); clusterModel.has_value())
+                prebaked = PrebakedClusterModel{ filepath, std::move(*clusterModel), {} };
+        }
+
+        if (prebaked.has_value())
+        {
+            InsertClusterLodModelWithMetadata(std::move(prebaked->model),
+                                              std::move(prebaked->metadata));
+        }
+        else
+        {
+            log::fatal("RTXMGScene::LoadWithThreadPool: Failed to load the GLTF file");
+        }
+    }
+    else if (ext == ".json")
+    {
+        log::info("RTXMGScene::LoadWithThreadPool: Loading a JSON file");
+        LoadSceneFile(filepath, objImporter, commandList);
+    }
+    else
+    {
+        log::fatal("RTXMGScene::LoadWithThreadPool: Unsupported file format");
+        return false;
+    }
+    return true;
+}
+
+void RTXMGScene::ReduceSceneStatistics()
+{
+    m_attributes.averageInstanceScale = 0.0f;
+    // Per-instance world sizes feed the median, which drives the default camera
+    // move speed — huge vista instances would skew the average.
+    std::vector<float> instanceSizes;
+    instanceSizes.reserve(m_subdInstances.size() + m_clusterLodInstances.size());
+    for (const auto& instance : m_subdInstances)
+    {
+        const float size = maxComponent(instance.aabb.m_maxs - instance.aabb.m_mins);
+        m_attributes.averageInstanceScale += size;
+        instanceSizes.push_back(size);
+    }
+    // Cluster-LoD instances live in their own list, so fold them in separately —
+    // otherwise a cluster-LoD scene gets scale 0 and dead WASD.
+    for (const auto& inst : m_clusterLodInstances)
+    {
+        const GeometryView& geo = m_clusterLodGeometries[inst.geometryID];
+        const box3 obj(float3(geo.bbox.lo.x, geo.bbox.lo.y, geo.bbox.lo.z),
+                       float3(geo.bbox.hi.x, geo.bbox.hi.y, geo.bbox.hi.z));
+        const affine3 instXform = homogeneousToAffine(inst.transform);
+        // World space, to match the subd branch above; the object-space box
+        // would report a size that ignores instance placement.
+        const float size = maxComponent((obj * instXform).diagonal());
+        m_attributes.averageInstanceScale += size;
+        instanceSizes.push_back(size);
+    }
+    const size_t instanceScaleCount = instanceSizes.size();
+    m_attributes.medianInstanceScale = 0.f;
+    if (!instanceSizes.empty())
+    {
+        const size_t mid = instanceSizes.size() / 2;
+        std::nth_element(instanceSizes.begin(), instanceSizes.begin() + mid,
+                         instanceSizes.end());
+        m_attributes.medianInstanceScale = instanceSizes[mid];
+    }
+
+    // Reduce the scene-wide max/total stats; initClas sizes its CLAS scratch
+    // from these, needing the observed max after baking.
+    for (const auto& geo : m_clusterLodGeometries)
+    {
+        m_maxClusterVertices  = std::max(m_maxClusterVertices,  geo.clusterMaxVerticesCount);
+        m_maxClusterTriangles = std::max(m_maxClusterTriangles, geo.clusterMaxTrianglesCount);
+        // Every geometry validated against m_clusterBakerConfig at load, so
+        // requested == baked; check it rather than trusting the policy.
+        assert(geo.lodStats.empty()
+               || bool(geo.lodStats[0].compressed) == m_clusterBakerConfig.useCompressedData);
+    }
+
+    // cgltf_alpha_mode: 0=opaque, 1=mask, 2=blend.  BLEND counts as alpha-masked
+    // here because it needs the same per-triangle CLAS geometry indices.
+    m_hasAlphaMask = false;
+    for (const auto& desc : m_clusterLodMaterialDescs)
+    {
+        if (desc.alphaModeGltf != 0)
+            m_hasAlphaMask = true;
+    }
+
+    if (instanceScaleCount > 0)
+        m_attributes.averageInstanceScale /= float(instanceScaleCount);
+    if ((m_attributes.frameRange.y - m_attributes.frameRange.x) > 1 &&
+        m_attributes.frameRate == 0.f)
+    {
+        m_attributes.frameRate = 24.0f;
+    }
+}
+
+void RTXMGScene::BuildSubdSceneNodes(const std::shared_ptr<RTXMGSceneNode>& root)
+{
+    uint32_t instanceIndex = 0;
+    for (auto& instance : m_subdInstances)
+    {
+        auto node = std::make_shared<RTXMGSceneNode>();
+        node->name = m_subdMeshes[instance.meshID]->GetShape()->filepath.generic_string()
+                     + "_" + std::to_string(instanceIndex);
+        node->translation       = double3(instance.translation);
+        node->rotation          = dquat(instance.rotation);
+        node->scaling           = double3(instance.scaling);
+        node->objectSpaceBounds = m_subdMeshes[instance.meshID]->GetShape()->aabb;
+        node->subdMeshInstance  = std::make_shared<SubdivisionMeshInstance>(SubdivisionMeshInstance{ instance.meshID });
+
+        instance.node = node;
+        m_sceneGraph.Attach(root, node);
+        ++instanceIndex;
+    }
+}
+
+void RTXMGScene::BuildClusterLodSceneNodes(const std::shared_ptr<RTXMGSceneNode>& root)
+{
+    for (auto& inst : m_clusterLodInstances)
+    {
+        const GeometryView& geo = m_clusterLodGeometries[inst.geometryID];
+
+        const affine3 aff = homogeneousToAffine(inst.transform);
+        double3 translation, scaling;
+        dquat   rotation;
+        decomposeAffine(daffine3(aff), &translation, &rotation, &scaling);
+
+        auto node = std::make_shared<RTXMGSceneNode>();
+        node->name              = inst.name.empty() ? "cluster_lod_geo_" + std::to_string(inst.geometryID) : inst.name;
+        node->translation       = translation;
+        node->rotation          = rotation;
+        node->scaling           = scaling;
+        node->objectSpaceBounds = box3(
+            float3(geo.bbox.lo.x, geo.bbox.lo.y, geo.bbox.lo.z),
+            float3(geo.bbox.hi.x, geo.bbox.hi.y, geo.bbox.hi.z));
+        node->clusterLodMeshInstance  = std::make_shared<ClusterLodMeshInstance>(ClusterLodMeshInstance{ inst.geometryID });
+        m_sceneGraph.Attach(root, node);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Buffer building
+// ---------------------------------------------------------------------------
+
+// Subd instances only: the cluster-LoD hit shaders take their transforms from
+// t_ClusterLodInstances, so t_InstanceData is indexed by subd instance.
+void RTXMGScene::BuildInstanceBuffer(nvrhi::ICommandList* commandList)
+{
+    const auto& subdInstances = GetSubdMeshInstances();
+    if (subdInstances.empty())
+        return;
+
+    std::vector<RTXMGInstanceData> cpuInstances;
+    cpuInstances.reserve(subdInstances.size());
+
+    for (const auto& inst : subdInstances)
+    {
+        RTXMGInstanceData id{};
+        if (inst.node)
+        {
+            affineToColumnMajor(inst.node->localToWorld,     id.transform.m_data);
+            affineToColumnMajor(inst.node->prevLocalToWorld, id.prevTransform.m_data);
+        }
+        cpuInstances.push_back(id);
+    }
+
+    const size_t byteSize = cpuInstances.size() * sizeof(RTXMGInstanceData);
+    if (!m_instanceBuffer || m_instanceBuffer->getDesc().byteSize != byteSize)
+    {
+        nvrhi::BufferDesc desc;
+        desc.byteSize     = byteSize;
+        desc.structStride = sizeof(RTXMGInstanceData);
+        desc.debugName    = "RTXMGInstanceBuffer";
+        desc.initialState = nvrhi::ResourceStates::ShaderResource;
+        desc.keepInitialState = true;
+        m_instanceBuffer = m_device->createBuffer(desc);
+    }
+    commandList->writeBuffer(m_instanceBuffer, cpuInstances.data(), byteSize);
+}
+
+void RTXMGScene::ApplyClusterLodGrid(uint32_t numCopies, float gap, uint32_t gridBits)
+{
+    // A double-apply would expand the already-expanded list to N² entries.
+    if (m_clusterLodGridApplied)
+        return;
+
+    const rtxmg::InstanceGridResult result = rtxmg::ReplicateInstancesOnGrid(
+        rtxmg::InstanceGridScene{
+            .clusterLodGeometries = m_clusterLodGeometries,
+            .subdMeshes           = m_subdMeshes,
+            .clusterLodInstances  = m_clusterLodInstances,
+            .subdInstances        = m_subdInstances,
+            .sceneGraph           = m_sceneGraph },
+        numCopies, gap, gridBits);
+
+    m_originalClusterLodBbox = result.originalBbox;
+    m_clusterLodGridApplied  = result.expanded;
+}
+
+void RTXMGScene::FinishedLoading(nvrhi::ICommandList* commandList)
+{
+    // Refresh SceneGraph transforms (frame 0).
+    m_sceneGraph.Refresh();
+
+    // Sync Instance::localToWorld from SceneNode (used by cluster tessellator).
+    for (auto& inst : m_subdInstances)
+    {
+        if (inst.node)
+            inst.localToWorld = inst.node->localToWorld;
+    }
+
+    // Build material buffer first (needed before surfaceToMaterialIndex).
+    m_materialLibrary.BuildMaterialBuffer(commandList);
+
+    // Build surfaceToMaterialIndex for every subd mesh.
+    for (size_t meshIdx = 0; meshIdx < m_subdMeshes.size(); ++meshIdx)
+    {
+        m_subdMeshes[meshIdx]->BuildSurfaceToMaterialIndex(
+            m_materialLibrary.GetSubdSubshapeMaterialIndices(meshIdx), commandList, m_descriptorTable);
+    }
+
+    m_materialLibrary.BuildClusterLodLocalMaterialIDs(m_clusterLodStorages, commandList);
+
+    // Build instance buffer.
+    BuildInstanceBuffer(commandList);
+}
+
+void RTXMGScene::Refresh(nvrhi::ICommandList* commandList, uint32_t frameIndex)
+{
+    (void)frameIndex;
+
+    // Update SceneGraph (propagates TRS → localToWorld for all nodes).
+    m_sceneGraph.Refresh();
+
+    // Sync Instance::localToWorld from SceneNode (used by cluster tessellator).
+    for (auto& inst : m_subdInstances)
+    {
+        if (inst.node)
+            inst.localToWorld = inst.node->localToWorld;
+    }
+
+    // Re-upload instance buffer with fresh transforms.
+    BuildInstanceBuffer(commandList);
 }

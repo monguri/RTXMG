@@ -1,23 +1,13 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+ * property and proprietary rights in and to this material, related
+ * documentation and any modifications thereto. Any use, reproduction,
+ * disclosure or distribution of this material and related documentation
+ * without an express license agreement from NVIDIA CORPORATION or
+ * its affiliates is strictly prohibited.
  */
 
 #include "rtxmg/scene/obj_importer.h"
@@ -27,7 +17,6 @@
 #include "rtxmg/subdivision/subdivision_surface.h"
 
 #include <donut/core/log.h>
-#include <donut/engine/Scene.h>
 #include <execution>
 #include <filesystem>
 #include <iostream>
@@ -86,10 +75,9 @@ static std::string getSequenceFormat(const std::string& str, int2 frameRange)
 
 ObjImporter::ObjImporter(std::shared_ptr<vfs::IFileSystem> fs,
     const fs::path& mediapath,
-    std::shared_ptr<SceneTypeFactory> sceneTypeFactory,
     std::shared_ptr<donut::engine::DescriptorTableManager> descriptorTableManager,
     TopologyCache& topologyCache)
-    : m_fs(std::move(fs)), m_sceneTypeFactory(std::move(sceneTypeFactory)),
+    : m_fs(std::move(fs)),
     m_topologyCache(topologyCache),
     m_descriptorTableManager(std::move(descriptorTableManager)),
     m_mediaPath(mediapath)
@@ -123,11 +111,6 @@ std::optional<Model> ObjImporter::Load(const fs::path& fileName, TextureCache& t
     }
     else
     {
-        if (fp.extension() == ".eddbin")
-        {
-            log::warning("EDDBin files are not supported by the ObjImporter");
-            return {};
-        }
         if (nframes == 1)
         {
             shape = Shape::LoadObjFile(fp.string().c_str());
@@ -209,8 +192,6 @@ std::optional<Model> ObjImporter::Load(const fs::path& fileName, TextureCache& t
     return model;
 }
 
-void Instance::Animate(float animTime, float animRate) {}
-
 void Instance::UpdateLocalTransform()
 {
     localToWorld = donut::math::scaling(scaling);
@@ -218,19 +199,4 @@ void Instance::UpdateLocalTransform()
     localToWorld *= rotation.toAffine();
 
     localToWorld *= donut::math::translation(translation);
-}
-
-void Instance::Lerp(Instance const& a, Instance const& b, float t)
-{
-    auto lerp = [](auto a, auto b, float t) { return (1.f - t) * a + t * b; };
-
-    localToWorld.m_linear =
-        lerp(a.localToWorld.m_linear, b.localToWorld.m_linear, t);
-    localToWorld.m_translation =
-        lerp(a.localToWorld.m_translation, b.localToWorld.m_translation, t);
-
-    // TODO: AABB lerp
-
-    radius = lerp(a.radius, b.radius, t);
-    edgelength = lerp(a.edgelength, b.edgelength, t);
 }

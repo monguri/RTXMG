@@ -1,23 +1,13 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+ * property and proprietary rights in and to this material, related
+ * documentation and any modifications thereto. Any use, reproduction,
+ * disclosure or distribution of this material and related documentation
+ * without an express license agreement from NVIDIA CORPORATION or
+ * its affiliates is strictly prohibited.
  */
 
 #ifndef RENDER_PARAMS_H // using instead of "#pragma once" due to https://github.com/microsoft/DirectXShaderCompiler/issues/3943
@@ -30,7 +20,6 @@
 using namespace donut::math;
 #endif
 
-#define ENABLE_PIXEL_DEBUG 0
 #define ENABLE_DUMP_FLOAT 0
 
 #define RTXMG_NVAPI_SHADER_EXT_SLOT 1000
@@ -133,12 +122,17 @@ struct RenderParams
     ColorMode colorMode;
     ShadingMode shadingMode;
     uint32_t spp;
-    int subFrameIndex;
+    uint32_t subFrameIndex;
 
     int enableWireframe;
     float wireframeThickness;
     float fireflyMaxIntensity;
     float roughnessOverride;
+
+    uint32_t isolationLevel;
+    uint32_t clusterPattern;
+    float globalDisplacementScale;
+    int debugSurfaceIndex;
 
     float3 missColor;
     uint32_t ptMaxBounces;
@@ -150,13 +144,26 @@ struct RenderParams
     int enableTimeView;
 
     float3 V;
-    uint32_t clusterPattern;
+    // Inspector-selected cluster-LOD geometryID; the hit shader draws its
+    // wireframe in red. -1 = none.
+    int selectedClusterLodGeometry;
 
     float3 W;
-    float globalDisplacementScale;
+    // Viewport-picked instance of the selected geometry: limits the red
+    // wireframe to that one instance. -1 = highlight every instance (row
+    // clicks in the Inspector carry no instance).
+    int selectedClusterLodInstance;
 
     float2 jitter;
     int2 debugPixel;
+
+    // Selected-LOD narrowing for the Inspector highlight: only clusters at
+    // this LOD level draw the red wireframe (-1 = all levels). Set by
+    // viewport picks (the hit cluster's level) and LOD-row clicks.
+    int selectedClusterLodLevel;
+    // Inspector-selected SubD mesh index; -1 = none.
+    int selectedSubdMesh;
+    int _padSel1, _padSel2;
 
     CameraConstants camera;
     CameraConstants prevCamera;
@@ -186,9 +193,10 @@ struct SubdInstance
     uint32_t positionsBindlessIndex;
     uint32_t positionsPrevBindlessIndex;
 
-    uint32_t surfaceToGeometryIndexBindlessIndex;
+    uint32_t surfaceToMaterialIndexBindlessIndex;
     uint32_t topologyQualityBindlessIndex;
-    uint32_t isolationLevel;
+    uint32_t meshID;
+    uint32_t _meshPad;
 
     float3x4 prevLocalToWorld;
     float3x4 worldToLocal;
@@ -203,9 +211,10 @@ struct SubdInstance
         , vertexControlPointIndicesBindlessIndex(kInvalidBindlessIndex)
         , positionsBindlessIndex(kInvalidBindlessIndex)
         , positionsPrevBindlessIndex(kInvalidBindlessIndex)
-        , surfaceToGeometryIndexBindlessIndex(kInvalidBindlessIndex)
+        , surfaceToMaterialIndexBindlessIndex(kInvalidBindlessIndex)
         , topologyQualityBindlessIndex(kInvalidBindlessIndex)
-        , isolationLevel(0)
+        , meshID(~0u)
+        , _meshPad(0)
     {}
 
     bool operator==(const SubdInstance& other) const

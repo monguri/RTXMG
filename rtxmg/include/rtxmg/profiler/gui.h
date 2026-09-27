@@ -1,29 +1,14 @@
-//
-// Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions
-// are met:
-//  * Redistributions of source code must retain the above copyright
-//    notice, this list of conditions and the following disclaimer.
-//  * Redistributions in binary form must reproduce the above copyright
-//    notice, this list of conditions and the following disclaimer in the
-//    documentation and/or other materials provided with the distribution.
-//  * Neither the name of NVIDIA CORPORATION nor the names of its
-//    contributors may be used to endorse or promote products derived
-//    from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
-// EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
-// PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
-// CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
-// EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
-// PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
-// PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
-// OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+ *
+ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+ * property and proprietary rights in and to this material, related
+ * documentation and any modifications thereto. Any use, reproduction,
+ * disclosure or distribution of this material and related documentation
+ * without an express license agreement from NVIDIA CORPORATION or
+ * its affiliates is strictly prohibited.
+ */
 //
 
 // clang-format off
@@ -46,9 +31,15 @@ class ProfilerGUI
     // if fps >= 0 displays value in profiler controller window
     int fps = -1;
 
-    // if ntris > 0 displays value in profiler controller window 
+    // if ntris > 0 displays value in profiler controller window
     uint32_t desiredTris = 0;
     uint32_t allocatedTris = 0;
+
+    // Cluster-LOD per-frame TLAS triangles (TRACK_RENDER_STATS): the CLAS-deduped
+    // footprint and the instanced sum, replacing the cluster_tess tris count.
+    bool     clusterLodTrisValid  = false;
+    uint64_t clusterLodUniqueTris = 0;
+    uint64_t clusterLodTotalTris  = 0;
     uint32_t desiredClusters = 0;
     uint32_t allocatedClusters = 0;
 
@@ -70,6 +61,11 @@ class ProfilerGUI
     bool displayGraphWindow = true;
 
   public:
+    // Active Profiler tab, persisted to imgui.ini via the RTXMG settings handler.
+    // A non-empty requestedTab force-selects that tab, then is cleared.
+    std::string activeTab;
+    std::string requestedTab;
+
     template <typename... SamplerGroup>
     void BuildUI( ImFont *iconicFont, ImPlotContext *plotContext, SamplerGroup&... groups );
 
@@ -133,7 +129,7 @@ inline void ProfilerGUI::BuildUI( ImFont *iconicFont, ImPlotContext *context, Sa
         const char* kWindowName = "Profiler";
         SetConstrainedWindowPos(kWindowName, profilerWindow.pos, profilerWindow.pivot, profilerWindow.screenLayoutSize);
         ImGui::SetNextWindowSize(profilerWindow.size, ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver); // Collapse the window by default
+        ImGui::SetNextWindowCollapsed(false, ImGuiCond_FirstUseEver); // shown expanded by default
         ImGui::SetNextWindowBgAlpha(.65f);
 
         if (ImGui::Begin(kWindowName, &displayGraphWindow, ImGuiWindowFlags_None))
@@ -145,14 +141,24 @@ inline void ProfilerGUI::BuildUI( ImFont *iconicFont, ImPlotContext *context, Sa
                 ImVec2 tabSize = profilerWindow.size;
                 (
                     [&] {
-                        if( ImGui::BeginTabItem( groups.name.c_str() ) )
+                        // A tab whose data the current scene can't produce is hidden,
+                        // not empty (e.g. Streaming on a scene with no cluster-LOD).
+                        if (!groups.TabEnabled())
+                            return;
+                        // Force-select the tab restored from imgui.ini, for one frame.
+                        ImGuiTabItemFlags tabFlags = (!requestedTab.empty() && requestedTab == groups.name)
+                                                         ? ImGuiTabItemFlags_SetSelected
+                                                         : ImGuiTabItemFlags_None;
+                        if( ImGui::BeginTabItem( groups.name.c_str(), nullptr, tabFlags ) )
                         {
+                            activeTab = groups.name;  // track open tab for save
                             groups.BuildUI( iconicFont, context );
                             ImGui::EndTabItem();
                         }
                     }(),
                     ... );
                 ImGui::EndTabBar();
+                requestedTab.clear();  // applied — the user can switch freely again
             }
         }
         ImGui::End();

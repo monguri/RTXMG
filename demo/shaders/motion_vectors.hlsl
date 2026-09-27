@@ -1,37 +1,27 @@
 /*
-* Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
-*
-* Permission is hereby granted, free of charge, to any person obtaining a
-* copy of this software and associated documentation files (the "Software"),
-* to deal in the Software without restriction, including without limitation
-* the rights to use, copy, modify, merge, publish, distribute, sublicense,
-* and/or sell copies of the Software, and to permit persons to whom the
-* Software is furnished to do so, subject to the following conditions:
-*
-* The above copyright notice and this permission notice shall be included in
-* all copies or substantial portions of the Software.
-*
-* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-* THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-* DEALINGS IN THE SOFTWARE.
-*/
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+ *
+ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+ * property and proprietary rights in and to this material, related
+ * documentation and any modifications thereto. Any use, reproduction,
+ * disclosure or distribution of this material and related documentation
+ * without an express license agreement from NVIDIA CORPORATION or
+ * its affiliates is strictly prohibited.
+ */
 #pragma pack_matrix(row_major)
 
-#include <donut/shaders/bindless.h>
+#include "rtxmg/utils/shader_debug.h"
+
 #include <donut/shaders/binding_helpers.hlsli>
 
 #include "render_params.h"
 #include "motion_vectors_params.h"
 #include "gbuffer.h"
 
-#include "rtxmg/cluster_builder/displacement.hlsli"
+#include "rtxmg/cluster_tess/displacement.hlsli"
 #include "rtxmg/subdivision/subdivision_eval.hlsli"
-
-#include "pixel_debug.h"
+#include "rtxmg/scene/instance_data.h"
 
 // MVEC_DISPLACEMENT
 #define MVEC_DISPLACEMENT_FROM_SUBD_EVAL 0
@@ -45,27 +35,19 @@ ConstantBuffer<RenderParams>        g_RenderParams          : register(b0);
 
 Texture2D<DepthFormat>              t_Depth                 : register(t0);
 StructuredBuffer<HitResult>         t_HitResult             : register(t1);
-StructuredBuffer<SubdInstance>      t_SubdInstances         : register(t2); // indexed via instancID, but values will be null.
-StructuredBuffer<InstanceData>      t_InstanceData          : register(t3);
-StructuredBuffer<GeometryData>      t_GeometryData          : register(t4);
-StructuredBuffer<MaterialConstants> t_MaterialConstants     : register(t5);
+StructuredBuffer<SubdInstance>      t_SubdInstances         : register(t2); // indexed via instanceID, but values will be null.
+StructuredBuffer<RTXMGMaterialConstants> t_MaterialConstants : register(t3);
 
 
-RWTexture2D<float2>                 u_MotionVectors         : register(u0);
-
-#if ENABLE_PIXEL_DEBUG
-RWStructuredBuffer<PixelDebugElement> u_PixelDebug          : register(u1);
-#endif
-
-
-VK_BINDING(0, 1) ByteAddressBuffer t_BindlessBuffers[]  : register(t0, space1);
-VK_BINDING(1, 1) Texture2D t_BindlessTextures[]         : register(t0, space2);
+VK_IMAGE_FORMAT_UNKNOWN RWTexture2D<float2>                 u_MotionVectors         : register(u0);
 
 SamplerState                        s_DisplacementSampler : register(s0);
+
 
 static DynamicSubdivisionEvaluatorHLSL MakeDynamicSubdivisionEvaluator(SubdInstance subdInstance, uint32_t surfaceIndex)
 {
     DynamicSubdivisionEvaluatorHLSL result;
+
     result.m_plans = ResourceDescriptorHeap[NonUniformResourceIndex(subdInstance.plansBindlessIndex)];
     result.m_stencilMatrix = ResourceDescriptorHeap[NonUniformResourceIndex(subdInstance.stencilMatrixBindlessIndex)];
     result.m_subpatchTrees = ResourceDescriptorHeap[NonUniformResourceIndex(subdInstance.subpatchTreesBindlessIndex)];
@@ -76,7 +58,7 @@ static DynamicSubdivisionEvaluatorHLSL MakeDynamicSubdivisionEvaluator(SubdInsta
     result.m_vertexControlPointsPrev = ResourceDescriptorHeap[NonUniformResourceIndex(subdInstance.positionsPrevBindlessIndex)];
 
     result.m_surfaceIndex = surfaceIndex;
-    result.m_isolationLevel = uint16_t(subdInstance.isolationLevel);
+    result.m_isolationLevel = uint16_t(g_RenderParams.isolationLevel);
     return result;
 }
 
@@ -92,7 +74,9 @@ void main(uint3 threadIdx : SV_DispatchThreadID)
     if (any(idx >= uint2(g_RenderParams.camera.dims)))
         return;
 
-    PIXEL_DEBUG_INIT(u_PixelDebug, g_RenderParams.debugPixel, idx, true);
+    // Do not delete: DXC eliminates this entirely, but its presence pins how it
+    // associates the limit-surface delta below, which the subd goldens encode.
+    SHADER_DEBUG_INIT(g_RenderParams.debugPixel, idx);
 
     const HitResult hit = t_HitResult[idx.y * g_RenderParams.camera.dims.x + idx.x];
 
@@ -121,8 +105,6 @@ void main(uint3 threadIdx : SV_DispatchThreadID)
         return;
     }
 
-    InstanceData instanceData = t_InstanceData[hit.instanceId];
-
     float2 prevPixel = 0.0f;
     SubdInstance subdInstance = t_SubdInstances[hit.instanceId];
     if (subdInstance.positionsPrevBindlessIndex != kInvalidBindlessIndex)
@@ -133,24 +115,21 @@ void main(uint3 threadIdx : SV_DispatchThreadID)
         {
             // Resample displacement from texture and apply to prev frame limit surface
             // If tess rates vary then there can be a mismatch with the current frame hit point.
-            LimitFrame limitPrev;
-            subd.EvaluatePrev(hit.surfaceUV, limitPrev);
+            LimitFrame limitPrev = subd.EvaluatePrev(hit.surfaceUV);
 
             float3 displacementVec = 0.f;
 
-            StructuredBuffer<uint16_t> surfaceToGeometryIndex = ResourceDescriptorHeap[NonUniformResourceIndex(subdInstance.surfaceToGeometryIndexBindlessIndex)];
-            uint32_t geometryIndex = surfaceToGeometryIndex[hit.surfaceIndex] + instanceData.firstGeometryIndex;
-            GeometryData geometry = t_GeometryData[geometryIndex];
-            MaterialConstants material = t_MaterialConstants[geometry.materialIndex];
+            StructuredBuffer<uint32_t> surfaceToMaterialIndex = ResourceDescriptorHeap[NonUniformResourceIndex(subdInstance.surfaceToMaterialIndexBindlessIndex)];
+            RTXMGMaterialConstants material = t_MaterialConstants[surfaceToMaterialIndex[hit.surfaceIndex]];
 
             float displacementScale = 0.f;
             int displacementTexIndex = -1;
             GetDisplacement(material, g_RenderParams.globalDisplacementScale, displacementTexIndex, displacementScale);
             if (displacementTexIndex >= 0)
             {
-                Texture2D displacementTex = t_BindlessTextures[NonUniformResourceIndex(displacementTexIndex)];
+                Texture2D<float> displacementTex = ResourceDescriptorHeap[NonUniformResourceIndex(displacementTexIndex)];
 
-                float displacement = displacementTex.SampleLevel(s_DisplacementSampler, hit.texcoord, 0).r * displacementScale;
+                float displacement = displacementTex.SampleLevel(s_DisplacementSampler, hit.texcoord, 0) * displacementScale;
                 float3 normal = normalize(cross(limitPrev.deriv1, limitPrev.deriv2));
                 displacementVec = displacement * normal;
             }
@@ -163,7 +142,7 @@ void main(uint3 threadIdx : SV_DispatchThreadID)
             // Compute displacement using the delta between gbuffer hit point and subd limit point
             // Expensive since it re-evalutes limit surface again, but compensates for tess rates
             LimitFrame limit, limitPrev;
-            subd.Evaluate(hit.surfaceUV, limit, limitPrev);
+            subd.Evaluate(limit, limitPrev, hit.surfaceUV);
 
             float3 displacementVec = TransformPoint(Pw, subdInstance.worldToLocal) - limit.p;
 

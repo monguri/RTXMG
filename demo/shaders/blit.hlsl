@@ -1,42 +1,44 @@
 /*
-* Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
-*
-* Permission is hereby granted, free of charge, to any person obtaining a
-* copy of this software and associated documentation files (the "Software"),
-* to deal in the Software without restriction, including without limitation
-* the rights to use, copy, modify, merge, publish, distribute, sublicense,
-* and/or sell copies of the Software, and to permit persons to whom the
-* Software is furnished to do so, subject to the following conditions:
-*
-* The above copyright notice and this permission notice shall be included in
-* all copies or substantial portions of the Software.
-*
-* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-* THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-* DEALINGS IN THE SOFTWARE.
-*/
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+ *
+ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+ * property and proprietary rights in and to this material, related
+ * documentation and any modifications thereto. Any use, reproduction,
+ * disclosure or distribution of this material and related documentation
+ * without an express license agreement from NVIDIA CORPORATION or
+ * its affiliates is strictly prohibited.
+ */
 
 #include "blit_params.h"
 
 #include "gbuffer.h"
 #include "utils.hlsli"
+#include <donut/shaders/binding_helpers.hlsli>
 
 ConstantBuffer<BlitParams> g_Params : register(b0);
-RWTexture2D<float4> g_Output : register(u0);
+VK_IMAGE_FORMAT_UNKNOWN RWTexture2D<float4> g_Output : register(u0);
 Texture2D<float4> g_Input : register(t0);
 Texture2D<float4> g_InputSplitScreen : register(t1);
 
 StructuredBuffer<HitResult> g_HitResult : register(t3);
 
+// Adapted scene luminance from donut's histogram eye-adaptation pass: one float,
+// stored as a raw uint.
+Buffer<uint> g_AutoExposure : register(t2);
+
 SamplerState g_Sampler : register(s0);
 
 inline float3 expose(float3 input)
 {
-    return input * g_Params.m_exposure;
+    float exposure = g_Params.m_exposure;
+    if (g_Params.m_autoExposureEnabled != 0)
+    {
+        float adaptedLuminance = asfloat(g_AutoExposure[0]);
+        if (adaptedLuminance > 1e-6f)
+            exposure *= g_Params.m_autoExposureScale / adaptedLuminance;
+    }
+    return input * exposure;
 }
 
 inline float3 computeSRGB(float3 c)
@@ -126,7 +128,7 @@ void main(uint3 threadIdx : SV_DispatchThreadID)
         switch (g_Params.m_blitDecodeMode)
         {
         case BlitDecodeMode::SingleChannel:
-            input = g_Input.Sample(g_Sampler, uv).rrr;
+            input = g_Input.SampleLevel(g_Sampler, uv, 0).rrr;
             break;
         case BlitDecodeMode::Depth:
             input = (g_Input[inputPos].rrr - g_Params.m_zNear) / (g_Params.m_zFar - g_Params.m_zNear);
@@ -157,13 +159,13 @@ void main(uint3 threadIdx : SV_DispatchThreadID)
             input = float3(frac(g_HitResult[hitResultIndex].texcoord), 0);
             break;
         case BlitDecodeMode::None:
-            input = g_Input.Sample(g_Sampler, uv).xyz;
+            input = g_Input.SampleLevel(g_Sampler, uv, 0).xyz;
             break;
         }
     }
     else
     {
-        input = g_InputSplitScreen.Sample(g_Sampler, uv).xyz;
+        input = g_InputSplitScreen.SampleLevel(g_Sampler, uv, 0).xyz;
     }
 
     input = expose(input);

@@ -1,23 +1,13 @@
 /*
- * Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
  *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+ * property and proprietary rights in and to this material, related
+ * documentation and any modifications thereto. Any use, reproduction,
+ * disclosure or distribution of this material and related documentation
+ * without an express license agreement from NVIDIA CORPORATION or
+ * its affiliates is strictly prohibited.
  */
 
 #include <sstream>
@@ -50,8 +40,32 @@ logassert(cond, "Malformed material file %s:%d: %s", m_filepath, lineNumber, msg
 #define obj_assert(cond, msg) \
 logassert(cond, "Malformed obj file %s:%d: %s", m_filepath, lineNumber, msg)
 
-static std::vector<std::unique_ptr<Shape::material>>
-parseMtllib(const char* m_filepath)
+std::string ReadObjMtllibName(const std::filesystem::path& objPath)
+{
+    std::ifstream f(objPath);
+    if (!f)
+        return {};
+
+    // `mtllib` is a header-ish directive, so stop once the vertex data starts
+    // rather than scanning a multi-hundred-MB mesh for a line that is not there.
+    std::string line;
+    while (std::getline(f, line))
+    {
+        if (line.compare(0, 7, "mtllib ") == 0)
+        {
+            std::string name = line.substr(7);
+            while (!name.empty() && (name.back() == '\r' || name.back() == ' '))
+                name.pop_back();
+            return name;
+        }
+        if (line.compare(0, 2, "v ") == 0)
+            break;
+    }
+    return {};
+}
+
+std::vector<std::unique_ptr<Shape::material>>
+ParseMtllib(const char* m_filepath)
 {
     std::vector<std::unique_ptr<Shape::material>> mtls;
 
@@ -302,9 +316,9 @@ static char const* parseFace(char const* ptr, std::vector<int>& vertcounts,
         if (vert.x != invalid_id)
             verts.push_back(vert.x - 1);
         if (vert.y != invalid_id)
-            uvs.push_back(vert.y - 1);
+            uvs.push_back(std::max(0, vert.y - 1));
         if (vert.z != invalid_id)
-            facenormals.push_back(vert.z - 1);
+            facenormals.push_back(std::max(0, vert.z - 1));
 
         ++count;
         ptr = SkipWhiteSpace(ptr);
@@ -412,7 +426,7 @@ std::unique_ptr<Shape> parseObj(char const* m_filepath, Scheme shapescheme,
                 if (fs::is_regular_file(p))
                 {
                     s->mtls =
-                        parseMtllib(p.generic_string().c_str());
+                        ParseMtllib(p.generic_string().c_str());
                     s->mtllib = buf;
                 }
             }
@@ -684,7 +698,7 @@ std::ifstream& operator>>(std::ifstream& is, Shape::tag& t)
 void Shape::WriteShape(const std::string& objFile) const
 {
     using namespace std::chrono;
-    fs::path cacheFile = fs::path(objFile).replace_extension(".bin");
+    fs::path cacheFile = fs::path(objFile).replace_extension(".subdcache");
 
     if (std::ofstream os(cacheFile, std::ios::out | std::ofstream::binary); os.is_open())
     {
@@ -717,7 +731,7 @@ bool Shape::ReadShape(const std::string& objFile)
 
     system_clock::duration::rep objFileTimeStamp = (fs::last_write_time(objFile).time_since_epoch() + version).count();
 
-    fs::path cacheFile = fs::path(objFile).replace_extension(".bin");
+    fs::path cacheFile = fs::path(objFile).replace_extension(".subdcache");
 
     if (std::ifstream is(cacheFile, std::ios::in | std::ofstream::binary); is.is_open())
     {
@@ -725,7 +739,7 @@ bool Shape::ReadShape(const std::string& objFile)
 
         readTrivial(is, binFileTimStamp);
 
-        // if timestamp stored in .bin doesn't match the .obj's timestamp return false
+        // if timestamp stored in the cache doesn't match the .obj's timestamp return false
         // i.e. read/load the .obj file instead
         if (binFileTimStamp == objFileTimeStamp)
         {
@@ -859,8 +873,11 @@ static std::vector<uint32_t> findUdims(fs::path const& basepath, Shape::material
                     std::sort(udims.begin(), udims.end());
                     udims.erase(std::unique(udims.begin(), udims.end()), udims.end());
 
+                    // Fatal, not skipped: the material contributes no mtlsMap entry,
+                    // and the per-face lookup below has no fallback binding.
                     if (udims.empty())
-                        throw std::runtime_error(std::string("cannot find udims for: ") + texpath.generic_string());
+                        log::fatal("No udim tiles on disk for '%s'.",
+                                   texpath.generic_string().c_str());
                 }
             }
         };
@@ -881,8 +898,11 @@ static std::unique_ptr<Shape::material> resolveUdim(fs::path const& basepath, Sh
 
             texpath = udimPath(texpath, std::to_string(udim).c_str());
 
+            // Tiles are discovered from whichever map findUdims looked at, so a
+            // sibling map may not have this one. Leave the path for the texture
+            // loader to report and carry on.
             if (!fs::is_regular_file(basepath / texpath))
-                throw std::runtime_error(std::string("cannot find udim: ") + (basepath / texpath).generic_string().c_str());
+                log::warning("Missing udim tile: %s", (basepath / texpath).generic_string().c_str());
         };
 
     std::apply([&resolve](auto&... maps) { (resolve(maps), ...); }, materialMaps(*newMtl));
@@ -890,6 +910,29 @@ static std::unique_ptr<Shape::material> resolveUdim(fs::path const& basepath, Sh
     newMtl->udim = udim;
 
     return newMtl;
+}
+
+std::vector<std::unique_ptr<Shape::material>> ParseMtllibResolved(
+    const fs::path& mtlPath, const fs::path& basepath)
+{
+    std::vector<std::unique_ptr<Shape::material>> resolved;
+
+    for (std::unique_ptr<Shape::material>& mtl : ParseMtllib(mtlPath.generic_string().c_str()))
+    {
+        if (!mtl)
+            continue;
+
+        if (!hasUdims(*mtl))
+        {
+            resolved.emplace_back(std::move(mtl));
+            continue;
+        }
+
+        for (uint32_t udim : findUdims(basepath, *mtl))
+            resolved.emplace_back(resolveUdim(basepath, *mtl, udim));
+    }
+
+    return resolved;
 }
 
 static void resolveUdims(Shape& shape)
@@ -945,6 +988,8 @@ static void resolveUdims(Shape& shape)
 
     std::vector<unsigned short> mtlbind(shape.mtlbind.size());
 
+    bool warnedUdimCrossing = false; // one report per shape, not per face
+
     for (uint32_t face = 0, vertCount = 0; face < shape.GetNumFaces(); ++face)
     {
         uint32_t nverts = shape.nvertsPerFace[face];
@@ -960,14 +1005,23 @@ static void resolveUdims(Shape& shape)
 
             it = mtlsMap.find(makeKey(mtlId, udim));
 
-            assert(it != mtlsMap.end() && mtls[it->second]->udim == udim);
+            // Runtime check, not an assert: the store below dereferences `it`
+            // unconditionally, so under NDEBUG a miss reads end().
+            if (it == mtlsMap.end())
+                log::fatal("'%s' face %u needs udim tile %u, which has no material.",
+                           shape.filepath.generic_string().c_str(), face, udim);
+            assert(mtls[it->second]->udim == udim);
 
             for (uint32_t vert = 1; vert < nverts; ++vert)
             {
                 texcoord = shape.uvs[shape.faceuvs[vertCount + vert]];
 
-                if (makeUdim(texcoord) != udim)
-                    throw std::runtime_error(std::string("udim crosses bounds for face " + std::to_string(face)));
+                if (makeUdim(texcoord) != udim && !warnedUdimCrossing)
+                {
+                    warnedUdimCrossing = true;
+                    log::warning("'%s' face %u spans more than one udim tile; it is bound to tile %u.",
+                                 shape.filepath.generic_string().c_str(), face, udim);
+                }
             }
         }
         else
@@ -1026,7 +1080,7 @@ std::unique_ptr<Shape> Shape::LoadObjFile(const fs::path& m_filepath,
         if (fs::is_regular_file(p))
         {
             log::info("Loading mtl file from disk: %s", p.generic_string().c_str());
-            shape->mtls = parseMtllib(p.generic_string().c_str());
+            shape->mtls = ParseMtllib(p.generic_string().c_str());
         }
         else
         {

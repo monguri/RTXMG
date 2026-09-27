@@ -1,24 +1,14 @@
 /*
-* Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.
-*
-* Permission is hereby granted, free of charge, to any person obtaining a
-* copy of this software and associated documentation files (the "Software"),
-* to deal in the Software without restriction, including without limitation
-* the rights to use, copy, modify, merge, publish, distribute, sublicense,
-* and/or sell copies of the Software, and to permit persons to whom the
-* Software is furnished to do so, subject to the following conditions:
-*
-* The above copyright notice and this permission notice shall be included in
-* all copies or substantial portions of the Software.
-*
-* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-* THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-* FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-* DEALINGS IN THE SOFTWARE.
-*/
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+ *
+ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+ * property and proprietary rights in and to this material, related
+ * documentation and any modifications thereto. Any use, reproduction,
+ * disclosure or distribution of this material and related documentation
+ * without an express license agreement from NVIDIA CORPORATION or
+ * its affiliates is strictly prohibited.
+ */
 
 #ifndef SUBDIVISION_EVAL_HLSLI // using instead of "#pragma once" due to https://github.com/microsoft/DirectXShaderCompiler/issues/3943
 #define SUBDIVISION_EVAL_HLSLI
@@ -26,6 +16,10 @@
 #include "rtxmg/subdivision/osd_ports/tmr/surfaceDescriptor.h"
 #include "rtxmg/subdivision/subdivision_plan_hlsl.h"
 #include "rtxmg/subdivision/vertex.h"
+
+#ifndef SHADER_DEBUG
+#define SHADER_DEBUG(x) 
+#endif
 
 // SURFACE_TYPE
 #define SURFACE_TYPE_PUREBSPLINE 0
@@ -47,8 +41,8 @@
 
 static const Index kPureBSplinePatchPointIndices[kPatchSize] = { 6, 7, 8, 9, 5, 0, 1, 10, 4, 3, 2, 11, 15, 14, 13, 12 };
     
-const static uint32_t kNumWaveSurfaceUVSamples = 8;
-const static float2 kWaveSurfaceUVSamples[kNumWaveSurfaceUVSamples] =
+static const uint32_t kNumWaveSurfaceUVSamples = 8;
+static const float2 kWaveSurfaceUVSamples[kNumWaveSurfaceUVSamples] =
 {
     { 0, 0 },
     { 0.5, 0 },
@@ -59,6 +53,22 @@ const static float2 kWaveSurfaceUVSamples[kNumWaveSurfaceUVSamples] =
     { 0, 1 },
     { 0, 0.5 }
 };
+
+// A small tolerance for the *sine of the angle* squared
+static const float kParallelEpsilonRadians = 0.001745f; // 0.1 degrees
+
+static const float kParallelCosSquared = (1.0f - kParallelEpsilonRadians * kParallelEpsilonRadians);
+
+bool IsParallel(float3 t0, float3 t1)
+{
+    // cos(theta) = dot(t0, t1) / (|t0| * |t1|)
+    // cos(theta)^2 = dot(t0, t1)^2 / (|t0|^2 * |t1|^2)
+    // cos(theta)^2 > kParallelCosSquared
+    // dot(t0, t1)^2 > kParallelCosSquared * |t0|^2 * |t1|^2
+
+    float dotTangents = dot(t0, t1);
+    return (dotTangents * dotTangents) > kParallelCosSquared * dot(t0, t0) * dot(t1, t1);
+}
 
 struct SubdivisionEvaluatorHLSL
 {
@@ -339,7 +349,7 @@ struct SubdivisionEvaluatorHLSL
     }
 
 #ifdef PATCH_POINTS_WRITEABLE
-    void WaveEvaluatePatchPoints(uint32_t iLane)
+    void WaveEvaluatePatchPoints(uint32_t iLane, uint32_t numLanes)
     {
         SurfaceDescriptor desc = GetSurfaceDesc();
         // desc.firstControlPoint is the offset to the first control point for this surface in vertexControlPointIndices
@@ -348,7 +358,7 @@ struct SubdivisionEvaluatorHLSL
         const uint32_t numPatchPoints = plan.GetTreeDescriptor().GetNumPatchPoints(m_isolationLevel);
 
         uint32_t globalPatchPointOffset = m_vertexPatchPointsOffsets[m_surfaceIndex];
-        for (int iPatchPoint = iLane; iPatchPoint < numPatchPoints; iPatchPoint += 32)  // advance wave
+        for (int iPatchPoint = iLane; iPatchPoint < numPatchPoints; iPatchPoint += numLanes)  // advance wave
         {
             float3 patchPoint = float3(0, 0, 0);
             for (int i = 0; i < plan.m_data.numControlPoints; ++i)
@@ -360,6 +370,45 @@ struct SubdivisionEvaluatorHLSL
         }
     }
 #endif
+
+    float3 CalculateLimitFrameNormal(LimitFrame limit)
+    {
+        // Primary method: compute normal from surface derivatives
+        float3 t0 = limit.deriv1;
+        float3 t1 = limit.deriv2;
+        
+        if (!IsParallel(t0, t1))
+        {
+            return normalize(cross(t0, t1));
+        }
+        else
+        {
+            // Fallback: compute normal from the 1-ring of the patch (center 3 points)
+            // Other points on the 2-ring can be zero if they are on a boundary.
+            SurfaceDescriptor desc = GetSurfaceDesc();
+            
+            Index cpi0 = m_vertexControlPointIndices[desc.firstControlPoint + 0];
+            Index cpi1 = m_vertexControlPointIndices[desc.firstControlPoint + 1];
+            Index cpi2 = m_vertexControlPointIndices[desc.firstControlPoint + 2];
+            
+            float3 p0 = m_vertexControlPoints[cpi0];
+            float3 p1 = m_vertexControlPoints[cpi1];
+            float3 p2 = m_vertexControlPoints[cpi2];
+
+            t0 = p1 - p0;
+            t1 = p2 - p0;
+            
+            if (!IsParallel(t0, t1))
+            {
+                return normalize(cross(t0, t1));
+            }
+            else
+            {
+                // Ultimate fallback: use up vector
+                return float3(0, 0, 1);
+            }
+        }
+    }
 };
 
 struct DynamicSubdivisionEvaluatorHLSL : SubdivisionEvaluatorHLSL
@@ -463,7 +512,7 @@ struct DynamicSubdivisionEvaluatorHLSL : SubdivisionEvaluatorHLSL
         }
     }
 
-    void Evaluate(float2 uv, out LimitFrame limit, out LimitFrame limitPrev)
+    void Evaluate(out LimitFrame limit, out LimitFrame limitPrev, float2 uv)
     {
         if (IsPureBSplinePatch())
         {
@@ -479,10 +528,13 @@ struct DynamicSubdivisionEvaluatorHLSL : SubdivisionEvaluatorHLSL
         }
     }
 
-    void EvaluatePrev(float2 uv, out LimitFrame limit)
+    LimitFrame EvaluatePrev(float2 uv)
     {
         LimitFrame dummy;
-        Evaluate(uv, dummy, limit);
+        LimitFrame limit;
+        limit.Clear();
+        Evaluate(dummy, limit, uv);
+        return limit;
     }
 };
 
@@ -494,8 +546,11 @@ struct TexcoordEvaluatorHLSL
     TEXCOORD_PATCH_POINTS_TYPE m_texcoordPatchPoints;
     StructuredBuffer<float2> m_texcoordControlPoints;
     
-    void EvalLinearBasis(float u, float v, out float weights[4], out float duWeights[4], out float dvWeights[4])
+    void EvalLinearBasis(out float weights[4], out float duWeights[4], out float dvWeights[4], float2 uv)
     {
+        float u = uv.x;
+        float v = uv.y;
+        
         weights[0] = (1.0f - u) * (1.0f - v);
         weights[1] = u * (1.0f - v);
         weights[2] = u * v;
@@ -587,7 +642,7 @@ struct TexcoordEvaluatorHLSL
         LocalIndex subface = desc.GetQuadSubfaceIndex();
 
         float pointWeights[4], duWeights[4], dvWeights[4];
-        EvalLinearBasis(uv.x, uv.y, pointWeights, duWeights, dvWeights);
+        EvalLinearBasis(pointWeights, duWeights, dvWeights, uv);
         
         for (int k = 0; k < 4; ++k)
         {
